@@ -150,6 +150,21 @@ Build options (set via `make VAR=1`):
 | `ASIO` | 0 | ASIO (Windows) |
 | `DSOUND` | 0 | DirectSound (Windows) |
 
+### Windows
+
+On Windows, use the provided build script:
+
+```bash
+python scripts/build_windows.py              # static wheel (default)
+python scripts/build_windows.py --dynamic    # dynamic wheel (bundles faust.dll)
+python scripts/build_windows.py --clean      # clean first, then build
+python scripts/build_windows.py --test       # build + install + run tests
+```
+
+If you have GNU Make installed, `make wheel-windows` also works for dynamic wheels.
+
+Prerequisites: Visual Studio 2022 (or MSVC Build Tools), Python 3.10+, [uv](https://docs.astral.sh/uv/), and CMake.
+
 See the full [Building from Source](https://shakfu.github.io/cyfaust/building/) guide for platform prerequisites, LLVM backend details, and wheel building instructions.
 
 ## Platform Support

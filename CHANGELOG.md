@@ -15,11 +15,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 
 ## [Unreleased]
 
+## [0.1.3]
+
 ### Added
 
 - Updated bundled Faust to `2.85.5` (from `2.83.1`)
+
 - Added `get_json()` to `InterpreterDspFactory` and `LlvmDspFactory` (both dynamic and static variants), wrapping the new factory-level `getJSON()` API introduced in Faust 2.85.x, which returns the DSP's JSON description (UI + metadata)
+
 - Added `FaustBuilder.copy_architecture()` to `manage.py`, which refreshes `resources/architecture` from the built Faust source. The full architecture tree is copied, minus unpopulated git submodule paths (oboe, py2max) and heavyweight entries inappropriate for the wheel (the prebuilt `ios-libsndfile.a` binary, mobile project trees `android`/`iOS`/`smartKeyboard`, and vendored C libraries `httpdlib`/`osclib`/`svgplot`), reducing the tree from ~42MB to ~13MB
+
+- Added `scripts/build_windows.py` for local Windows wheel builds, supporting both static (default) and dynamic (`--dynamic`) linking modes with dependency checks, optional cleaning, and test options
+
 - Re-enabled Windows in `cyfaust-release.yml` workflow (static interpreter wheels for Python 3.10-3.14, with sndfile/samplerate built from source and non-audio test suite)
 
 ### Changed
