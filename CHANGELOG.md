@@ -17,15 +17,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 
 ### Added
 
+- Updated bundled Faust to `2.85.5` (from `2.83.1`)
+- Added `get_json()` to `InterpreterDspFactory` and `LlvmDspFactory` (both dynamic and static variants), wrapping the new factory-level `getJSON()` API introduced in Faust 2.85.x, which returns the DSP's JSON description (UI + metadata)
+- Added `FaustBuilder.copy_architecture()` to `manage.py`, which refreshes `resources/architecture` from the built Faust source. The full architecture tree is copied, minus unpopulated git submodule paths (oboe, py2max) and heavyweight entries inappropriate for the wheel (the prebuilt `ios-libsndfile.a` binary, mobile project trees `android`/`iOS`/`smartKeyboard`, and vendored C libraries `httpdlib`/`osclib`/`svgplot`), reducing the tree from ~42MB to ~13MB
 - Re-enabled Windows in `cyfaust-release.yml` workflow (static interpreter wheels for Python 3.10-3.14, with sndfile/samplerate built from source and non-audio test suite)
 
 ### Changed
 
+- Refreshed bundled `resources/libraries` for Faust 2.85.5: added 9 new standard library files (`debug`, `doc`, `env`, `hysteresis`, `lfo`, `linearalgebra`, `motion`, `operator`, `pitchenv`) and synced `stdfaust.lib` and the library examples
 - Extracted `patch_headers_for_msvc()` from `FaustLLVMBuilder` into a standalone idempotent function in `manage.py`, now called from both `FaustBuilder` and `FaustLLVMBuilder` on Windows
 - Added static build (`cyfaust.cyfaust`) import fallbacks to `test_box_coverage.py` and `test_signal_coverage.py` so they work on Windows CI
 
 ### Fixed
 
+- Fixed stale bundled `resources` on Faust version updates: `FaustBuilder.copy_stdlib()` and `copy_examples()` wrote to the gitignored, non-bundled `share/faust` directory and were disabled in `process()`. They now sync into the tracked-and-bundled `resources/libraries` (and `resources/libraries/examples`), and are re-enabled along with the new `copy_architecture()` so a Faust bump refreshes the bundled standard library, examples, and architecture files
 - Fixed remaining VLAs in `include/faust/dsp/sound-player.h` (3 locations) that caused MSVC C2131 errors on Windows CI
 
 ## [0.1.2]

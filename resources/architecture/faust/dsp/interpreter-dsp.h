@@ -158,6 +158,9 @@ class LIBFAUST_API interpreter_dsp_factory : public dsp_factory {
   
         /* Return factory expanded DSP code */
         std::string getDSPCode();
+        
+        /* Return JSON description of the DSP (UI + metadata) */
+        std::string getJSON();
     
         /* Return factory compile options */
         std::string getCompileOptions();
@@ -171,7 +174,11 @@ class LIBFAUST_API interpreter_dsp_factory : public dsp_factory {
         /* Get warning messages list for a given compilation */
         std::vector<std::string> getWarningMessages();
 
-        /* Create a new DSP instance, to be deleted with C++ 'delete' */
+        /* Create a new DSP instance, to be deleted with C++ 'delete'.
+         Note that the factory keeps track of all DSP allocated with 'createDSPInstance',
+         so a DSP can be manually deleted using the C++ 'delete', or will be finally garbaged
+         by 'deleteInterpreterDSPFactory' if needed.
+         */
         interpreter_dsp* createDSPInstance();
     
         /* Set a custom memory manager to be used when creating instances */
@@ -214,7 +221,7 @@ LIBFAUST_API interpreter_dsp_factory* createInterpreterDSPFactoryFromFile(const 
  * Create a Faust DSP factory from a DSP source code as a string. Note that the library keeps an internal cache of all 
  * allocated factories so that the compilation of same DSP code (that is same source code and 
  * same set of 'normalized' compilations options) will return the same (reference counted) factory pointer. You will have to explicitly
- * use deleteDSPFactory to properly decrement reference counter when the factory is no more needed.
+ * use deleteInterpreterDSPFactory to properly decrement reference counter when the factory is no more needed.
  * 
  * @param name_app - the name of the Faust program
  * @param dsp_content - the Faust program as a string
@@ -315,12 +322,12 @@ extern "C" LIBFAUST_API void stopMTDSPFactories();
  * the same (reference counted) factory pointer. You will have to explicitly use deleteInterpreterDSPFactory to properly
  * decrement reference counter when the factory is no more needed.
  *
- * @param bitcode - the bitcode string
+ * @param bit_code - the bitcode string
  * @param error_msg - the error string to be filled
  *
  * @return the DSP factory on success, otherwise a null pointer.
  */
-LIBFAUST_API interpreter_dsp_factory* readInterpreterDSPFactoryFromBitcode(const std::string& bitcode, std::string& error_msg);
+LIBFAUST_API interpreter_dsp_factory* readInterpreterDSPFactoryFromBitcode(const std::string& bit_code, std::string& error_msg);
 
 /**
  * Write a Faust DSP factory into a bitcode string.

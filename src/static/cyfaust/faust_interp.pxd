@@ -120,6 +120,7 @@ cdef extern from "faust/dsp/interpreter-dsp.h":
         string getName()
         string getSHAKey()
         string getDSPCode()
+        string getJSON()
         string getCompileOptions()
         vector[string] getLibraryList()
         vector[string] getIncludePathnames()

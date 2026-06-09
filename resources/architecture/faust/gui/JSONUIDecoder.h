@@ -29,8 +29,10 @@
 #include <map>
 #include <utility>
 #include <cstdlib>
-#include <sstream>
 #include <functional>
+#include <sstream>
+#include <cstring>
+#include <string_view>
 
 #include "faust/gui/CGlue.h"
 #include "faust/gui/meta.h"
@@ -99,6 +101,7 @@ struct FAUST_API JSONUIDecoderBase
     virtual void buildUserInterface(UI* ui_interface, char* memory_block) = 0;
     virtual void buildUserInterface(UIGlue* ui_interface, char* memory_block) = 0;
     virtual bool hasCompileOption(const std::string& option) = 0;
+    virtual std::string getCompileOption(const std::string& option) = 0;
 };
 
 template <typename REAL>
@@ -150,17 +153,17 @@ struct FAUST_API JSONUIDecoderReal : public JSONUIDecoderBase {
     controlMap fPathInputTable;     // [path, ZoneParam]
     controlMap fPathOutputTable;    // [path, ZoneParam]
     
-    bool startWith(const std::string& str, const std::string& prefix)
+    bool startWith(const std::string& str, const std::string& prefix) const noexcept
     {
-        return (str.substr(0, prefix.size()) == prefix);
+        return str.size() >= prefix.size() && str.compare(0, prefix.size(), prefix) == 0;
     }
 
-    bool isInput(const std::string& type)
+    bool isInput(const std::string& type) const noexcept
     {
         return (type == "vslider" || type == "hslider" || type == "nentry" || type == "button" || type == "checkbox");
     }
-    bool isOutput(const std::string& type) { return (type == "hbargraph" || type == "vbargraph"); }
-    bool isSoundfile(const std::string& type) { return (type == "soundfile"); }
+    bool isOutput(const std::string& type) const noexcept { return (type == "hbargraph" || type == "vbargraph"); }
+    bool isSoundfile(const std::string& type) const noexcept { return (type == "soundfile"); }
     
     std::string getString(std::map<std::string, std::pair<std::string, double> >& map, const std::string& key)
     {
@@ -172,17 +175,22 @@ struct FAUST_API JSONUIDecoderReal : public JSONUIDecoderBase {
         return (map.find(key) != map.end()) ? int(map[key].second) : -1;
     }
     
-    void setReflectZoneFun(int index, ReflectFunction fun)
+    void setReflectZoneFun(int index, ReflectFunction fun) override
     {
         fPathInputTable[index]->setReflectZoneFun(fun);
     }
     
-    void setModifyZoneFun(int index, ModifyFunction fun)
+    void setModifyZoneFun(int index, ModifyFunction fun) override
     {
         fPathOutputTable[index]->setModifyZoneFun(fun);
     }
 
     JSONUIDecoderReal(const std::string& json)
+    {
+        initFromJSON(json);
+    }
+
+    void initFromJSON(const std::string& json)
     {
         fJSON = json;
         const char* p = fJSON.c_str();
@@ -244,21 +252,21 @@ struct FAUST_API JSONUIDecoderReal : public JSONUIDecoderBase {
         }
     }
     
-    void metadata(Meta* m)
+    void metadata(Meta* m) override
     {
         for (const auto& it : fMetadata) {
             m->declare(it.first.c_str(), it.second.c_str());
         }
     }
     
-    void metadata(MetaGlue* m)
+    void metadata(MetaGlue* m) override
     {
         for (const auto& it : fMetadata) {
             m->declare(m->metaInterface, it.first.c_str(), it.second.c_str());
         }
     }
     
-    void resetUserInterface()
+    void resetUserInterface() override
     {
         int item = 0;
         for (const auto& it : fUiItems) {
@@ -268,7 +276,7 @@ struct FAUST_API JSONUIDecoderReal : public JSONUIDecoderBase {
         }
     }
     
-    void resetUserInterface(char* memory_block, Soundfile* defaultsound = nullptr)
+    void resetUserInterface(char* memory_block, Soundfile* defaultsound = nullptr) override
     {
         for (const auto& it : fUiItems) {
             int index = it.index;
@@ -282,12 +290,12 @@ struct FAUST_API JSONUIDecoderReal : public JSONUIDecoderBase {
         }
     }
     
-    int getSampleRate(char* memory_block)
+    int getSampleRate(char* memory_block) override
     {
         return *reinterpret_cast<int*>(&memory_block[fSRIndex]);
     }
     
-    void setupDSPProxy(UI* ui_interface, char* memory_block)
+    void setupDSPProxy(UI* ui_interface, char* memory_block) override
     {
         if (!fDSPProxy) {
             fDSPProxy = true;
@@ -312,9 +320,9 @@ struct FAUST_API JSONUIDecoderReal : public JSONUIDecoderBase {
         }
     }
     
-    bool hasDSPProxy() { return fDSPProxy; }
+    bool hasDSPProxy() override { return fDSPProxy; }
   
-    void buildUserInterface(UI* ui_interface)
+    void buildUserInterface(UI* ui_interface) override
     {
         // MANDATORY: to be sure floats or double are correctly parsed
         char* tmp_local = setlocale(LC_ALL, nullptr);
@@ -395,7 +403,7 @@ struct FAUST_API JSONUIDecoderReal : public JSONUIDecoderBase {
         }
     }
     
-    void buildUserInterface(UI* ui_interface, char* memory_block)
+    void buildUserInterface(UI* ui_interface, char* memory_block) override
     {
         // MANDATORY: to be sure floats or double are correctly parsed
         char* tmp_local = setlocale(LC_ALL, nullptr);
@@ -465,7 +473,7 @@ struct FAUST_API JSONUIDecoderReal : public JSONUIDecoderBase {
         }
     }
     
-    void buildUserInterface(UIGlue* ui_interface, char* memory_block)
+    void buildUserInterface(UIGlue* ui_interface, char* memory_block) override
     {
         // MANDATORY: to be sure floats or double are correctly parsed
         char* tmp_local = setlocale(LC_ALL, nullptr);
@@ -535,7 +543,7 @@ struct FAUST_API JSONUIDecoderReal : public JSONUIDecoderBase {
         }
     }
     
-    bool hasCompileOption(const std::string& option)
+    bool hasCompileOption(const std::string& option) override
     {
         std::istringstream iss(fCompileOptions);
         std::string token;
@@ -545,20 +553,34 @@ struct FAUST_API JSONUIDecoderReal : public JSONUIDecoderBase {
         return false;
     }
     
-    int getDSPSize() { return fDSPSize; }
-    std::string getName() { return fName; }
-    std::string getLibVersion() { return fVersion; }
-    std::string getCompileOptions() { return fCompileOptions; }
-    std::vector<std::string> getLibraryList() { return fLibraryList; }
-    std::vector<std::string> getIncludePathnames() { return fIncludePathnames; }
-    int getNumInputs() { return fNumInputs; }
-    int getNumOutputs() { return fNumOutputs; }
+    std::string getCompileOption(const std::string& option) override
+    {
+        std::istringstream iss(fCompileOptions);
+        std::string token;
+        while (std::getline(iss, token, ' ')) {
+            if (token == option) {
+                std::string res;
+                iss >> res;
+                return res;
+            }
+        }
+        return "";
+    }
     
-    std::vector<ExtZoneParam*>& getInputControls()
+    int getDSPSize() override { return fDSPSize; }
+    std::string getName() override { return fName; }
+    std::string getLibVersion() override { return fVersion; }
+    std::string getCompileOptions() override { return fCompileOptions; }
+    std::vector<std::string> getLibraryList() override { return fLibraryList; }
+    std::vector<std::string> getIncludePathnames() override { return fIncludePathnames; }
+    int getNumInputs() override { return fNumInputs; }
+    int getNumOutputs() override { return fNumOutputs; }
+    
+    std::vector<ExtZoneParam*>& getInputControls() override
     {
         return fPathInputTable;
     }
-    std::vector<ExtZoneParam*>& getOutputControls()
+    std::vector<ExtZoneParam*>& getOutputControls() override
     {
         return fPathOutputTable;
     }

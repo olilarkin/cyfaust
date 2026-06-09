@@ -52,7 +52,7 @@ static Plugin* pluginInstance;
 #endif
 
 #ifdef _WIN32
-typedef unsigned int uint
+typedef unsigned int uint;
 #endif
 
 /*
@@ -86,53 +86,10 @@ class rack_dsp {
         virtual void instanceClear() = 0;
         virtual rack_dsp* clone() = 0;
         virtual void metadata(Meta* m) = 0;
+        virtual void control() {}
+        virtual void frame(FAUSTFLOAT* inputs, FAUSTFLOAT* outputs) {}
         virtual void compute(int count, FAUSTFLOAT** inputs, FAUSTFLOAT** outputs) = 0;
         virtual void compute(double /*date_usec*/, int count, FAUSTFLOAT** inputs, FAUSTFLOAT** outputs) { compute(count, inputs, outputs); }
-    
-};
-
-template <typename REAL>
-struct one_sample_dsp : public rack_dsp {
-    
-    int* iZone;
-    REAL* fZone;
-    
-    one_sample_dsp()
-    :iZone(nullptr), fZone(nullptr)
-    {}
-    
-    one_sample_dsp(int* icontrol, REAL* fcontrol)
-    :iZone(icontrol), fZone(fcontrol)
-    {
-        assert(false);
-    }
-    
-    virtual ~one_sample_dsp()
-    {
-        delete [] iZone;
-        delete [] fZone;
-    }
-    
-    void initControl()
-    {
-        iZone = new int[getNumIntControls()];
-        fZone = new FAUSTFLOAT[getNumRealControls()];
-    }
-    
-    virtual int getNumIntControls() = 0;
-    virtual int getNumRealControls() = 0;
-    
-    virtual void control(int* iControl, REAL* fControl) = 0;
-    
-    virtual void compute(FAUSTFLOAT* inputs, FAUSTFLOAT* outputs, int* iControl, REAL* fControl) = 0;
-    
-    virtual void compute(int count, FAUSTFLOAT** inputs_aux, FAUSTFLOAT** outputs_aux)
-    {}
-    
-    virtual void compute(double date_usec, int count, FAUSTFLOAT** inputs, FAUSTFLOAT** outputs)
-    {
-        compute(count, inputs, outputs);
-    }
     
 };
 
@@ -618,8 +575,6 @@ struct mydspModule : Module {
         }
         
         for (int v = 0; v < VOICES; v++) {
-            // Init control zones
-            fDSP[v].initControl();
             // Init DSP with default SR
             fDSP[v].init(DEFAULT_SR);
         }
@@ -662,7 +617,7 @@ struct mydspModule : Module {
         if (--fControlCounter == 0) {
             // DSP Control
             for (int v = 0; v < VOICES; v++) {
-                fDSP[v].control(fDSP[v].iZone, fDSP[v].fZone);
+                fDSP[v].control();
             }
             // Controller update
             fRackUI->updateInputs(this);
@@ -702,7 +657,7 @@ struct mydspModule : Module {
             }
             
             // One sample compute
-            fDSP[v].compute(inputs_aux, outputs_aux, fDSP[v].iZone, fDSP[v].fZone);
+            fDSP[v].frame(inputs_aux, outputs_aux);
             
             // Copy outputs
             for (int chan = 0; chan < fDSP[0].getNumOutputs(); chan++) {
@@ -735,17 +690,17 @@ struct mydspModule : Module {
             cout << it.second << endl;
         }
         
-        cout << "Width " << fLayoutUI.fCurrentGroup->getWidth() << endl;
-        cout << "Height " << fLayoutUI.fCurrentGroup->getHeight() << endl;
+        cout << "Width " << fLayoutUI.getWidth() << endl;
+        cout << "Height " << fLayoutUI.getHeight() << endl;
         
-        width = fLayoutUI.fCurrentGroup->getWidth();
-        height = fLayoutUI.fCurrentGroup->getHeight();
+        width = fLayoutUI.getWidth();
+        height = fLayoutUI.getHeight();
     }
     
     void setSize(float x_pos, float y_pos, float width, float height)
     {
-        fLayoutUI.fCurrentGroup->setSize(width, height);
-        fLayoutUI.fCurrentGroup->setPos(x_pos, y_pos);
+        fLayoutUI.setSize(width, height);
+        fLayoutUI.setPos(x_pos, y_pos);
         
         cout << "==========================" << endl;
         for (const auto& it : fLayoutUI.fPathItemMap) {
@@ -753,8 +708,8 @@ struct mydspModule : Module {
             cout << it.second << endl;
         }
         
-        cout << "Width " << fLayoutUI.fCurrentGroup->getWidth() << endl;
-        cout << "Height " << fLayoutUI.fCurrentGroup->getHeight() << endl;
+        cout << "Width " << fLayoutUI.getWidth() << endl;
+        cout << "Height " << fLayoutUI.getHeight() << endl;
     }
     
 };

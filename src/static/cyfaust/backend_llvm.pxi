@@ -93,6 +93,10 @@ cdef class LlvmDspFactory:
         """Return factory expanded DSP code."""
         return self.ptr.getDSPCode().decode()
 
+    def get_json(self) -> str:
+        """Return JSON description of the DSP (UI + metadata)."""
+        return self.ptr.getJSON().decode()
+
     def get_compile_options(self) -> str:
         """Return factory compile options."""
         return self.ptr.getCompileOptions().decode()

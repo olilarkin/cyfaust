@@ -425,10 +425,11 @@ FaustPlugInAudioProcessor::FaustPlugInAudioProcessor()
 #endif
 {
     bool midi_sync = false;
+    bool midi = false;
     int nvoices = 0;
     
     mydsp* tmp_dsp = new mydsp();
-    MidiMeta::analyse(tmp_dsp, midi_sync, nvoices);
+    MidiMeta::analyse(tmp_dsp, midi, midi_sync, nvoices);
     delete tmp_dsp;
 	
 #ifdef PLUGIN_MAGIC
@@ -467,7 +468,7 @@ FaustPlugInAudioProcessor::FaustPlugInAudioProcessor()
         fDSP = std::make_unique<dsp_sequencer>(dsp, new effect());
     }
 #else
-    fDSP = std::make_unique<dsp_sequencer>(dsp, new effects());
+    fDSP = std::make_unique<dsp_sequencer>(dsp, new effect());
 #endif
     
 #else
@@ -552,19 +553,19 @@ juce::AudioProcessor::BusesProperties FaustPlugInAudioProcessor::getBusesPropert
 {
     if (juce::PluginHostType::getPluginLoadedAs() == wrapperType_Standalone) {
         if (FAUST_INPUTS == 0) {
-            return BusesProperties().withOutput("Output", juce::AudioChannelSet::discreteChannels(std::min<int>(2, FAUST_OUTPUTS)), true);
+            return BusesProperties().withOutput("Output", juce::AudioChannelSet::canonicalChannelSet(std::min<int>(2, FAUST_OUTPUTS)), true);
         } else {
             return BusesProperties()
-            .withInput("Input", juce::AudioChannelSet::discreteChannels(std::min<int>(2, FAUST_INPUTS)), true)
-            .withOutput("Output", juce::AudioChannelSet::discreteChannels(std::min<int>(2, FAUST_OUTPUTS)), true);
+            .withInput("Input", juce::AudioChannelSet::canonicalChannelSet(std::min<int>(2, FAUST_INPUTS)), true)
+            .withOutput("Output", juce::AudioChannelSet::canonicalChannelSet(std::min<int>(2, FAUST_OUTPUTS)), true);
         }
     } else {
         if (FAUST_INPUTS == 0) {
-            return BusesProperties().withOutput("Output", juce::AudioChannelSet::discreteChannels(FAUST_OUTPUTS), true);
+            return BusesProperties().withOutput("Output", juce::AudioChannelSet::canonicalChannelSet(FAUST_OUTPUTS), true);
         } else {
             return BusesProperties()
-            .withInput("Input", juce::AudioChannelSet::discreteChannels(FAUST_INPUTS), true)
-            .withOutput("Output", juce::AudioChannelSet::discreteChannels(FAUST_OUTPUTS), true);
+            .withInput("Input", juce::AudioChannelSet::canonicalChannelSet(FAUST_INPUTS), true)
+            .withOutput("Output", juce::AudioChannelSet::canonicalChannelSet(FAUST_OUTPUTS), true);
         }
     }
 }
@@ -706,11 +707,11 @@ void FaustPlugInAudioProcessor::process (juce::AudioBuffer<FloatType>& buffer, j
             if (isUsingDoublePrecision()) {
                 // Nothing to do
             } else {
-                fDSP = std::make_unique<dsp_sample_adapter<double, float>>(fDSP.release());
+                fDSP = std::make_unique<dsp_sample_adapter<double, float, 16384>>(fDSP.release());
             }
         } else {
             if (isUsingDoublePrecision()) {
-                fDSP = std::make_unique<dsp_sample_adapter<float, double>>(fDSP.release());
+                fDSP = std::make_unique<dsp_sample_adapter<float, double, 16384>>(fDSP.release());
             } else {
                 // Nothing to do
             }
@@ -718,7 +719,7 @@ void FaustPlugInAudioProcessor::process (juce::AudioBuffer<FloatType>& buffer, j
         
         // Possibly adapt DSP inputs/outputs number
         if (fDSP->getNumInputs() > getTotalNumInputChannels() || fDSP->getNumOutputs() > getTotalNumOutputChannels()) {
-            fDSP = std::make_unique<dsp_adapter>(fDSP.release(), getTotalNumInputChannels(), getTotalNumOutputChannels(), 4096);
+            fDSP = std::make_unique<dsp_adapter>(fDSP.release(), getTotalNumInputChannels(), getTotalNumOutputChannels(), 16384);
         }
     }
     

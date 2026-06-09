@@ -121,6 +121,11 @@ class TestInterpreterAPI:
         assert len(factory1.get_sha_key()) > 0, "Factory should have SHA key"
         assert len(factory1.get_dsp_code()) > 0, "Factory should have DSP code"
 
+        # Test JSON description (UI + metadata), added in Faust 2.85.x
+        factory_json = factory1.get_json()
+        assert len(factory_json) > 0, "Factory should have a JSON description"
+        assert factory_json.lstrip().startswith("{"), "Factory JSON should be a JSON object"
+
         # Test factory from boxes
         with box_context():
             box = box_real(0.5).par(box_real(0.3))

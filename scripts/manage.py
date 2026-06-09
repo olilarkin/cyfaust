@@ -65,7 +65,7 @@ PY_VER_MINOR = sys.version_info.minor
 
 DEBUG = True
 
-FAUST_VERSION = "2.83.1"
+FAUST_VERSION = "2.85.5"
 
 # ----------------------------------------------------------------------------
 # type aliases
@@ -86,6 +86,7 @@ class Project:
         self.lib = self.cwd / "lib"
         self.lib_static = self.lib / "static"
         self.share = self.cwd / "share"
+        self.resources = self.cwd / "resources"
         self.scripts = self.cwd / "scripts"
         self.src = self.cwd / "src"
         self.patch = self.scripts / "patch"
@@ -747,28 +748,97 @@ class FaustBuilder(Builder):
                 self.fail("copy_staticlib failed")
 
     def copy_stdlib(self):
-        share_faust = self.project.share / "faust"
+        """Refresh the bundled Faust standard library (`*.lib` files).
+
+        The wrapper resolves `import("stdfaust.lib")` against
+        `resources/libraries` (passed as `-I`), so these must track the
+        version of libfaust that was just built. Stale `.lib` files are
+        removed first so that libraries dropped upstream do not linger,
+        while the `examples/` subdir (handled by `copy_examples`) is
+        preserved.
+        """
+        libraries = self.project.resources / "libraries"
+        src = self.prefix / "share" / "faust"
         try:
             self.log.info("copy stdlib")
-            self.makedirs(share_faust)
-            for lib in (self.prefix / "share" / "faust").glob("*.lib"):
-                self.copy(lib, share_faust / lib.name)
+            self.makedirs(libraries)
+            # remove stale top-level .lib files (keep examples/ subdir)
+            for stale in libraries.glob("*.lib"):
+                self.remove(stale, silent=True)
+            for lib in src.glob("*.lib"):
+                self.copy(lib, libraries / lib.name)
         finally:
-            if not share_faust.exists():
+            if not list(libraries.glob("*.lib")):
                 self.fail("copy_stdlib failed")
 
     def copy_examples(self):
+        """Refresh the bundled Faust library examples.
+
+        These live under `resources/libraries/examples` (alongside the
+        `.lib` files) so they ship with the wheel and stay in sync with
+        the built version. The destination is removed first because
+        `copy` uses `shutil.copytree`, which refuses to overwrite an
+        existing directory.
+        """
+        examples = self.project.resources / "libraries" / "examples"
+        src = self.prefix / "share" / "faust" / "examples"
         try:
             self.log.info("copy examples")
-            self.copy(
-                self.prefix / "share" / "faust" / "examples",
-                self.project.share / "faust" / "examples",
-            )
-            self.remove(self.project.share / "faust" / "examples" / "SAM")
-            self.remove(self.project.share / "faust" / "examples" / "bela")
+            self.remove(examples, silent=True)
+            self.copy(src, examples)
+            self.remove(examples / "SAM", silent=True)
+            self.remove(examples / "bela", silent=True)
         finally:
-            if not (self.project.share / "faust" / "examples").exists():
+            if not examples.exists():
                 self.fail("copy_examples failed")
+
+    def copy_architecture(self):
+        """Refresh the bundled Faust architecture files.
+
+        The wrapper passes `resources/architecture` as the `-A` search
+        path, so it must track the architecture tree of the built
+        version. The full tree from the freshly cloned faust source is
+        copied; the destination is removed first because `copy` uses
+        `shutil.copytree`, which refuses to overwrite an existing
+        directory.
+
+        Two classes of entries are then pruned:
+
+        - `submodules`: git submodule paths that the shallow clone does
+          not populate (oboe, py2max).
+        - `excluded`: heavyweight entries unreachable through the cyfaust
+          API and inappropriate to bundle in the wheel - a prebuilt
+          binary archive plus mobile app project trees and vendored C
+          libraries. This keeps the breadth of small architecture
+          targets while dropping ~30MB of dead weight.
+        """
+        architecture = self.project.resources / "architecture"
+        src = self.src / "architecture"
+        submodules = [
+            "android/app/oboe",
+            "smartKeyboard/android/app/oboe",
+            "max-msp/py2max",
+        ]
+        excluded = [
+            "ios-libsndfile.a",  # 11MB prebuilt Mach-O binary, not source
+            "android",           # Android Studio project tree
+            "iOS",               # iOS project tree
+            "smartKeyboard",     # mobile keyboard generator
+            "httpdlib",          # vendored HTTP server C library
+            "osclib",            # vendored OSC C library
+            "svgplot",           # vendored SVG plotting support
+        ]
+        try:
+            self.log.info("copy architecture")
+            self.remove(architecture, silent=True)
+            self.copy(src, architecture)
+            for sub in submodules:
+                self.remove(architecture / sub, silent=True)
+            for entry in excluded:
+                self.remove(architecture / entry, silent=True)
+        finally:
+            if not architecture.exists():
+                self.fail("copy_architecture failed")
 
     def process(self):
         self.get_faust()
@@ -781,9 +851,10 @@ class FaustBuilder(Builder):
             self.copy_headers()
         if PLATFORM == "Windows":
             patch_headers_for_msvc(self.project.include)
-        # skip since `resources` already contains these
-        # self.copy_stdlib()
-        # self.copy_examples()
+        # refresh bundled resources so they track the built faust version
+        self.copy_stdlib()
+        self.copy_examples()
+        self.copy_architecture()
         self.log.info("faust build DONE")
 
 

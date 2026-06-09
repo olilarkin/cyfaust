@@ -44,7 +44,11 @@ class dsp_adapter : public decorator_dsp {
         FAUSTFLOAT** fAdaptedOutputs;
         int fHWInputs;
         int fHWOutputs;
+        int fDSPInputs;
+        int fDSPOutputs;
+    
         int fBufferSize;
+        bool fDelete;
     
         void adaptBuffers(FAUSTFLOAT** inputs, FAUSTFLOAT** outputs)
         {
@@ -58,20 +62,27 @@ class dsp_adapter : public decorator_dsp {
     
     public:
     
-        dsp_adapter(dsp* dsp, int hw_inputs, int hw_outputs, int buffer_size):decorator_dsp(dsp)
+        dsp_adapter(::dsp* dsp, int hw_inputs, int hw_outputs, int buffer_size, bool to_delete = true):decorator_dsp(dsp)
         {
             fHWInputs = hw_inputs;
             fHWOutputs = hw_outputs;
+            fDSPInputs = dsp->getNumInputs();
+            fDSPOutputs = dsp->getNumOutputs();
             fBufferSize = buffer_size;
+            fDelete = to_delete;
             
-            fAdaptedInputs = new FAUSTFLOAT*[dsp->getNumInputs()];
-            for (int i = 0; i < dsp->getNumInputs() - fHWInputs; i++) {
+            const int input_slots = std::max<int>(fDSPInputs, fHWInputs);
+            fAdaptedInputs = new FAUSTFLOAT*[input_slots];
+            const int extra_inputs = std::max(0, fDSPInputs - fHWInputs);
+            for (int i = 0; i < extra_inputs; i++) {
                 fAdaptedInputs[i + fHWInputs] = new FAUSTFLOAT[buffer_size];
                 memset(fAdaptedInputs[i + fHWInputs], 0, sizeof(FAUSTFLOAT) * buffer_size);
             }
             
-            fAdaptedOutputs = new FAUSTFLOAT*[dsp->getNumOutputs()];
-            for (int i = 0; i < dsp->getNumOutputs() - fHWOutputs; i++) {
+            const int output_slots = std::max<int>(fDSPOutputs, fHWOutputs);
+            fAdaptedOutputs = new FAUSTFLOAT*[output_slots];
+            const int extra_outputs = std::max(0, fDSPOutputs - fHWOutputs);
+            for (int i = 0; i < extra_outputs; i++) {
                 fAdaptedOutputs[i + fHWOutputs] = new FAUSTFLOAT[buffer_size];
                 memset(fAdaptedOutputs[i + fHWOutputs], 0, sizeof(FAUSTFLOAT) * buffer_size);
             }
@@ -79,15 +90,18 @@ class dsp_adapter : public decorator_dsp {
     
         virtual ~dsp_adapter()
         {
-            for (int i = 0; i < fDSP->getNumInputs() - fHWInputs; i++) {
+            for (int i = 0; i < fDSPInputs - fHWInputs; i++) {
                 delete [] fAdaptedInputs[i + fHWInputs];
             }
             delete [] fAdaptedInputs;
             
-            for (int i = 0; i < fDSP->getNumOutputs() - fHWOutputs; i++) {
+            for (int i = 0; i < fDSPOutputs - fHWOutputs; i++) {
                 delete [] fAdaptedOutputs[i + fHWOutputs];
             }
             delete [] fAdaptedOutputs;
+        
+            // Decorator should not delete the decorated fDSP
+            if (!fDelete) fDSP = nullptr;
         }
     
         virtual int getNumInputs() { return fHWInputs; }
@@ -109,7 +123,7 @@ class dsp_adapter : public decorator_dsp {
 };
 
 // Adapts a DSP for a different sample size
-template <typename REAL_INT, typename REAL_EXT>
+template <typename REAL_INT, typename REAL_EXT, int SIZE=4096>
 class dsp_sample_adapter : public decorator_dsp {
     
     private:
@@ -137,16 +151,16 @@ class dsp_sample_adapter : public decorator_dsp {
     
     public:
     
-        dsp_sample_adapter(dsp* dsp):decorator_dsp(dsp)
+        dsp_sample_adapter(::dsp* dsp):decorator_dsp(dsp)
         {
             fAdaptedInputs = new REAL_INT*[dsp->getNumInputs()];
             for (int i = 0; i < dsp->getNumInputs(); i++) {
-                fAdaptedInputs[i] = new REAL_INT[4096];
+                fAdaptedInputs[i] = new REAL_INT[SIZE];
             }
             
             fAdaptedOutputs = new REAL_INT*[dsp->getNumOutputs()];
             for (int i = 0; i < dsp->getNumOutputs(); i++) {
-                fAdaptedOutputs[i] = new REAL_INT[4096];
+                fAdaptedOutputs[i] = new REAL_INT[SIZE];
             }
         }
     
@@ -167,7 +181,7 @@ class dsp_sample_adapter : public decorator_dsp {
     
         virtual void compute(int count, FAUSTFLOAT** inputs, FAUSTFLOAT** outputs)
         {
-            assert(count <= 4096);
+            assert(count <= SIZE);
             adaptInputBuffers(count, inputs);
             // DSP base class uses FAUSTFLOAT** type, so reinterpret_cast has to be used even if the real DSP uses REAL_INT
             fDSP->compute(count, reinterpret_cast<FAUSTFLOAT**>(fAdaptedInputs), reinterpret_cast<FAUSTFLOAT**>(fAdaptedOutputs));
@@ -176,7 +190,7 @@ class dsp_sample_adapter : public decorator_dsp {
     
         virtual void compute(double date_usec, int count, FAUSTFLOAT** inputs, FAUSTFLOAT** outputs)
         {
-            assert(count <= 4096);
+            assert(count <= SIZE);
             adaptInputBuffers(count, inputs);
             // DSP base class uses FAUSTFLOAT** type, so reinterpret_cast has to be used even if the real DSP uses REAL_INT
             fDSP->compute(date_usec, count, reinterpret_cast<FAUSTFLOAT**>(fAdaptedInputs), reinterpret_cast<FAUSTFLOAT**>(fAdaptedOutputs));
@@ -424,7 +438,7 @@ struct LowPass6e : public Filter<fVslider0, fVslider1> {
 };
 
 // A "si.bus(N)" like hard-coded class
-struct dsp_bus : public dsp {
+struct dsp_bus : public ::dsp {
     
     int fChannels;
     int fSampleRate;
@@ -456,7 +470,7 @@ struct dsp_bus : public dsp {
     virtual void instanceResetUserInterface() {}
     virtual void instanceClear() {}
     
-    virtual dsp* clone() { return new dsp_bus(fChannels); }
+    virtual ::dsp* clone() { return new dsp_bus(fChannels); }
     
     virtual void metadata(Meta* m) {}
     
@@ -487,7 +501,7 @@ class sr_sampler : public decorator_dsp {
     
     public:
     
-        sr_sampler(dsp* dsp):decorator_dsp(dsp)
+        sr_sampler(::dsp* dsp):decorator_dsp(dsp)
         {
             for (int chan = 0; chan < fDSP->getNumInputs(); chan++) {
                 fInputLowPass.push_back(FILTER());
@@ -642,7 +656,7 @@ class dsp_up_sampler : public sr_sampler<FILTER> {
 
 // Create a UP/DS + Filter adapted DSP
 template <typename REAL>
-dsp* createSRAdapter(dsp* DSP, std::string& error, int ds = 0, int us = 0, int filter = 0)
+dsp* createSRAdapter(::dsp* DSP, std::string& error, int ds = 0, int us = 0, int filter = 0)
 {
     if (ds >= 2) {
         switch (filter) {

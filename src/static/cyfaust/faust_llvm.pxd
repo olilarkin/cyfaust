@@ -149,6 +149,7 @@ cdef extern from "faust/dsp/llvm-dsp.h":
         # Use getDSPMachineTarget() free function instead for current machine target
         string getSHAKey()
         string getDSPCode()
+        string getJSON()
         string getCompileOptions()
         vector[string] getLibraryList()
         vector[string] getIncludePathnames()

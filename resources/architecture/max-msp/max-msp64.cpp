@@ -138,17 +138,25 @@ using namespace std;
 #include "z_dsp.h"
 #include "jpatcher_api.h"
 #include <string.h>
+#include <stdint.h>
 
 #define ASSIST_INLET 	1
 #define ASSIST_OUTLET 	2
 
-#define EXTERNAL_VERSION    "0.87"
+#define EXTERNAL_VERSION    "0.88"
 #define STR_SIZE            512
 
 #include "faust/gui/GUI.h"
 #include "faust/gui/MidiUI.h"
 #include "faust/gui/mspUI.h"
 #include "faust/dsp/poly-dsp.h"
+
+#ifdef MC_VERSION
+// For older Max/MSP SDK versions
+#ifndef Z_MC_INLETS
+#define Z_MC_INLETS 32
+#endif
+#endif
 
 list<GUI*> GUI::fGuiList;
 ztimedmap GUI::gTimedZoneMap;
@@ -167,12 +175,14 @@ typedef struct faust
 {
     t_pxobject m_ob;
     t_atom *m_seen, *m_want;
-    map<string, vector<t_object*> > m_output_table;
     short m_where;
     bool m_mute;
     void** m_args;
     mspUI* m_dspUI;
     dsp* m_dsp;
+#ifdef MC_VERSION
+    dsp* m_mc_dsp;
+#endif
     void* m_control_outlet;
     char* m_json;
     t_systhread_mutex m_mutex;    
@@ -201,6 +211,9 @@ void faust_allocate(t_faust* x, int nvoices)
     // Delete old
     delete x->m_dsp;
     delete x->m_dspUI;
+    if (x->m_savedUI) {
+        x->m_savedUI->save();
+    }
     x->m_dspUI = new mspUI();
     
     if (nvoices > 0) {
@@ -224,11 +237,18 @@ void faust_allocate(t_faust* x, int nvoices)
     x->m_dsp->buildUserInterface(x->m_midiUI);
 #endif
   
+        // Restore saved UI to new DSP mapping
+    if (x->m_savedUI) {
+        x->m_dsp->buildUserInterface(x->m_savedUI);
+        x->m_savedUI->load();
+    }
+
     // Possible sample adaptation
     if (sizeof(FAUSTFLOAT) == 4) {
         x->m_dsp = new dsp_sample_adapter<FAUSTFLOAT, double>(x->m_dsp);
     }
     
+    // Cache current IO counts
     x->m_Inputs = x->m_dsp->getNumInputs();
     x->m_Outputs = x->m_dsp->getNumOutputs();
     
@@ -270,9 +290,11 @@ void faust_anything(t_faust* obj, t_symbol* s, short ac, t_atom* av)
         obj->m_dspUI->setValue(name, off);
         obj->m_dspUI->setValue(name, on);
         
-        av[0].a_type = A_FLOAT;
-        av[0].a_w.w_float = off;
-        faust_anything(obj, s, 1, av);
+        // Safe toggle using a local atom (ac can be 0, so av may be nullptr)
+        t_atom toggle_atom[1];
+        toggle_atom[0].a_type = A_FLOAT;
+        toggle_atom[0].a_w.w_float = off;
+        faust_anything(obj, s, 1, toggle_atom);
         
     } else if (mspUI::checkDigit(name)) { // List of values
         
@@ -329,10 +351,14 @@ void faust_anything(t_faust* obj, t_symbol* s, short ac, t_atom* av)
         
     } else {
         // Standard parameter name
-        FAUSTFLOAT value = (av[0].a_type == A_LONG) ? FAUSTFLOAT(av[0].a_w.w_long) : FAUSTFLOAT(av[0].a_w.w_float);
-        res = obj->m_dspUI->setValue(name, value);
-        if (!res) {
-            post("Unknown parameter : %s", (s)->s_name);
+        if (ac > 0) {
+            FAUSTFLOAT value = (av[0].a_type == A_LONG) ? FAUSTFLOAT(av[0].a_w.w_long) : FAUSTFLOAT(av[0].a_w.w_float);
+            res = obj->m_dspUI->setValue(name, value);
+            if (!res) {
+                post("Unknown parameter : %s", (s)->s_name);
+            }
+        } else {
+            post("No value provided for parameter : %s", (s)->s_name);
         }
     }
 }
@@ -340,6 +366,10 @@ void faust_anything(t_faust* obj, t_symbol* s, short ac, t_atom* av)
 /*--------------------------------------------------------------------------*/
 void faust_polyphony(t_faust* x, t_symbol* s, short ac, t_atom* av)
 {
+    if (ac < 1 || atom_gettype(&av[0]) != A_LONG) {
+        post("polyphony requires a long argument (voices)");
+        return;
+    }
     if (systhread_mutex_lock(x->m_mutex) == MAX_ERR_NONE) {
         faust_allocate(x, av[0].a_w.w_long);
         systhread_mutex_unlock(x->m_mutex);
@@ -382,33 +412,6 @@ void faust_create_jsui(t_faust* x)
             object_method_typed(obj, gensym("anything"), 1, &json, 0);
         }
     }
-        
-    // Keep all outputs to be notified in update_outputs
-    x->m_output_table.clear();
-    for (box = jpatcher_get_firstobject(patcher); box; box = jbox_get_nextobject(box)) {
-        obj = jbox_get_object(box);
-        t_symbol* scriptingname = jbox_get_varname(obj); // scripting name
-        // Keep control outputs
-        if (scriptingname && x->m_dspUI->isOutputValue(scriptingname->s_name)) {
-            x->m_output_table[scriptingname->s_name].push_back(obj);
-        }
-    }
-}
-
-/*--------------------------------------------------------------------------*/
-void faust_update_outputs(t_faust* x)
-{
-    for (const auto& it1 : x->m_output_table) {
-        bool new_val = false;
-        FAUSTFLOAT value = x->m_dspUI->getOutputValue(it1.first, new_val);
-        if (new_val) {
-            t_atom at_value;
-            atom_setfloat(&at_value, value);
-            for (const auto& it2 : it1.second) {
-                object_method_typed(it2, gensym("float"), 1, &at_value, 0);
-            }
-        }
-    }
 }
 
 /*--------------------------------------------------------------------------*/
@@ -426,12 +429,13 @@ void faust_make_json(t_faust* x)
 void* faust_new(t_symbol* s, short ac, t_atom* av)
 {
     bool midi_sync = false;
+    bool midi = false;
     int nvoices = 0;
     t_faust* x = (t_faust*)object_alloc(faust_class);
     
     mydsp* tmp_dsp = new mydsp();
-    MidiMeta::analyse(tmp_dsp, midi_sync, nvoices);
- #ifdef SOUNDFILE
+    MidiMeta::analyse(tmp_dsp, midi, midi_sync, nvoices);
+#ifdef SOUNDFILE
     Max_Meta3 meta3;
     tmp_dsp->metadata(&meta3);
     string bundle_path_str = SoundUI::getBinaryPathFrom(meta3.fName);
@@ -439,13 +443,16 @@ void* faust_new(t_symbol* s, short ac, t_atom* av)
         post("Bundle_path '%s' cannot be found!", meta3.fName.c_str());
     }
     x->m_soundInterface = new SoundUI(bundle_path_str, -1, nullptr, sizeof(FAUSTFLOAT) == 8);
- #endif
+#endif
     delete tmp_dsp;
     
     x->m_savedUI = new SaveLabelUI();
     // allocation is done in faust_allocate
     x->m_dspUI = NULL;
     x->m_dsp = NULL;
+#ifdef MC_VERSION
+    x->m_mc_dsp = NULL;
+#endif
     x->m_json = NULL;
     x->m_mute = false;
     x->m_control_outlet = outlet_new((t_pxobject*)x, (char*)"list");
@@ -469,18 +476,23 @@ void* faust_new(t_symbol* s, short ac, t_atom* av)
         num_input = x->m_dsp->getNumInputs();
     }
     
+    free(x->m_args);
     x->m_args = (void**)calloc((num_input + x->m_dsp->getNumOutputs()) + 2, sizeof(void*));
-    
+   
+#ifdef MC_VERSION
+    dsp_setup((t_pxobject *)x, 1);
+    outlet_new((t_pxobject*)x, (char*)"multichannelsignal");
+    ((t_pxobject*)x)->z_misc = Z_NO_INPLACE | Z_MC_INLETS; // To assure input and output buffers are actually different
+#else
     /* Multi in */
     dsp_setup((t_pxobject*)x, num_input);
-
     /* Multi out */
     for (int i = 0; i < x->m_dsp->getNumOutputs(); i++) {
         outlet_new((t_pxobject*)x, (char*)"signal");
     }
-
     ((t_pxobject*)x)->z_misc = Z_NO_INPLACE; // To assure input and output buffers are actually different
- 
+#endif
+     
     // Display controls
 #ifdef POST
     x->m_dspUI->displayControls();
@@ -497,6 +509,14 @@ void* faust_new(t_symbol* s, short ac, t_atom* av)
 void faust_osc(t_faust* x, t_symbol* s, short ac, t_atom* av)
 {
     if (ac == 5) {
+        if (atom_gettype(&av[0]) != A_SYM
+            || atom_gettype(&av[1]) != A_LONG
+            || atom_gettype(&av[2]) != A_LONG
+            || atom_gettype(&av[3]) != A_LONG
+            || atom_gettype(&av[4]) != A_LONG) {
+            post("Should be : osc 'IP inport outport xmit(0|1|2) bundle(0|1)'");
+            return;
+        }
         if (systhread_mutex_lock(x->m_mutex) == MAX_ERR_NONE) {
             
             delete x->m_oscInterface;
@@ -618,6 +638,19 @@ void faust_dblclick(t_faust* x, long inlet)
 //11/13/2015 : faust_assist is actually called at each click in the patcher, so we now use 'faust_dblclick' to display the parameters...
 void faust_assist(t_faust* x, void* b, long msg, long a, char* dst)
 {
+#ifdef MC_VERSION
+    if (msg == ASSIST_INLET) {
+        snprintf(dst, 512, "(messages/multi-channel signal) : Audio Input %ld", (a+1));
+    } else if (msg == ASSIST_OUTLET) {
+        if (a == 0) {
+            snprintf(dst, 512, "(multi-channel signal) : Audio Output %ld", (a+1));
+        } else if (a == 1) {
+            snprintf(dst, 512, "(list) : [path, cur|init, min, max]*");
+        } else {
+            snprintf(dst, 512, "(int) : raw MIDI bytes*");
+        }
+    }
+#else
     if (msg == ASSIST_INLET) {
         if (a == 0) {
             if (x->m_dsp->getNumInputs() == 0) {
@@ -637,6 +670,7 @@ void faust_assist(t_faust* x, void* b, long msg, long a, char* dst)
             snprintf(dst, 512, "(int) : raw MIDI bytes*");
         }
     }
+#endif
 }
 
 /*--------------------------------------------------------------------------*/
@@ -648,25 +682,33 @@ void faust_mute(t_faust* obj, t_symbol* s, short ac, t_atom* at)
 }
 
 /*--------------------------------------------------------------------------*/
+#ifdef MC_VERSION
+long faust_multichanneloutputs(t_faust* x, long outletindex)
+{
+    return (outletindex == 0) ? x->m_Outputs : 0;
+}
+#endif
+
+/*--------------------------------------------------------------------------*/
 void faust_free(t_faust* x)
 {
     dsp_free((t_pxobject*)x);
-    delete x->m_dsp;
-    delete x->m_dspUI;
-    delete x->m_savedUI;
-    if (x->m_args) free(x->m_args);
-    if (x->m_json) free(x->m_json);
-    systhread_mutex_free(x->m_mutex);
+    delete x->m_dsp;        x->m_dsp = nullptr;
+    delete x->m_dspUI;      x->m_dspUI = nullptr;
+    delete x->m_savedUI;    x->m_savedUI = nullptr;
+    if (x->m_args) { free(x->m_args); x->m_args = nullptr; }
+    if (x->m_json) { free(x->m_json); x->m_json = nullptr; }
+    systhread_mutex_free(x->m_mutex); x->m_mutex = nullptr;
 #ifdef MIDICTRL
     // m_midiUI *must* be deleted before m_midiHandler
-    delete x->m_midiUI;
-    delete x->m_midiHandler;
+    delete x->m_midiUI;      x->m_midiUI = nullptr;
+    delete x->m_midiHandler; x->m_midiHandler = nullptr;
 #endif
 #ifdef SOUNDFILE
-    delete x->m_soundInterface;
+    delete x->m_soundInterface; x->m_soundInterface = nullptr;
 #endif
 #ifdef OSCCTRL
-    delete x->m_oscInterface;
+    delete x->m_oscInterface; x->m_oscInterface = nullptr;
 #endif
 }
 
@@ -674,18 +716,23 @@ void faust_free(t_faust* x)
 void faust_perform64(t_faust* x, t_object* dsp64, double** ins, long numins, double** outs, long numouts, long sampleframes, long flags, void* userparam)
 {
     AVOIDDENORMALS;
+
     if (!x->m_mute && systhread_mutex_trylock(x->m_mutex) == MAX_ERR_NONE) {
         if (x->m_dsp) {
             if (x->m_dspUI->isMulti()) {
                 x->m_dspUI->setMultiValues(reinterpret_cast<FAUSTFLOAT*>(ins[0]), sampleframes);
+            #ifdef MC_VERSION
+                x->m_mc_dsp->compute(sampleframes, reinterpret_cast<FAUSTFLOAT**>(++ins), reinterpret_cast<FAUSTFLOAT**>(outs));
+            #else
                 x->m_dsp->compute(sampleframes, reinterpret_cast<FAUSTFLOAT**>(++ins), reinterpret_cast<FAUSTFLOAT**>(outs));
+            #endif
             } else {
+            #ifdef MC_VERSION
+                x->m_mc_dsp->compute(sampleframes, reinterpret_cast<FAUSTFLOAT**>(ins), reinterpret_cast<FAUSTFLOAT**>(outs));
+            #else
                 x->m_dsp->compute(sampleframes, reinterpret_cast<FAUSTFLOAT**>(ins), reinterpret_cast<FAUSTFLOAT**>(outs));
+            #endif
             }
-        #ifdef OSCCTRL
-            if (x->m_oscInterface) x->m_oscInterface->endBundle();
-        #endif
-            //faust_update_outputs(x);
             // Use the right outlet to output messages
             faust_dump_outputs(x);
         }
@@ -704,6 +751,13 @@ void faust_perform64(t_faust* x, t_object* dsp64, double** ins, long numins, dou
 /*--------------------------------------------------------------------------*/
 void faust_dsp64(t_faust* x, t_object* dsp64, short* count, double samplerate, long maxvectorsize, long flags)
 {
+#ifdef MC_VERSION
+    // We need to know the real number of inputs to adapt faust_perform64
+    intptr_t inputs = (intptr_t)object_method(dsp64, gensym("getnuminputchannels"), x, 0);
+    delete x->m_mc_dsp;
+    // x->m_mc_dsp will not delete the x->m_dsp object
+    x->m_mc_dsp = new dsp_adapter(x->m_dsp, inputs, x->m_Outputs, maxvectorsize, false);
+#endif
     object_method(dsp64, gensym("dsp_add64"), x, faust_perform64, 0, NULL);
 }
 
@@ -744,6 +798,9 @@ void ext_main(void* r)
     class_addmethod(c, (method)faust_dblclick, "dblclick", A_CANT, 0);
     class_addmethod(c, (method)faust_assist, "assist", A_CANT, 0);
     class_addmethod(c, (method)faust_mute, "mute", A_GIMME, 0);
+#ifdef MC_VERSION
+    class_addmethod(c, (method)faust_multichanneloutputs, "multichanneloutputs", A_CANT, 0);
+#endif
     
     dsp* tmp_dsp = new mydsp();
     mspUI tmp_UI;
@@ -767,7 +824,7 @@ void ext_main(void* r)
     faust_class = c;
 #ifdef POST
     post((char*)"Faust DSP object v%s (sample = %s bits code = %s)", EXTERNAL_VERSION, ((sizeof(FAUSTFLOAT) == 4) ? "32" : "64"), getCodeSize());
-    post((char*)"Copyright (c) 2012-2024 Grame");
+    post((char*)"Copyright (c) 2012-2026 Grame");
 #endif
     Max_Meta1 meta1;
     tmp_dsp->metadata(&meta1);
@@ -786,4 +843,3 @@ void ext_main(void* r)
 }
 
 /******************* END max-msp64.cpp ****************/
-

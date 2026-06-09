@@ -35,7 +35,6 @@ architecture section is not modified.
 /*
  Wraps a LLVM module compiled as object code in a C++ 'dsp' class.
  */
-
 #ifdef __cplusplus
 extern "C"
 {

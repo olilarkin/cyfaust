@@ -9,7 +9,7 @@
 
 /************************************************************************
  FAUST Architecture File
- Copyright (C) 2021 GRAME, Centre National de Creation Musicale
+ Copyright (C) 2021-2024 GRAME, Centre National de Creation Musicale
  ---------------------------------------------------------------------
  This Architecture section is free software; you can redistribute it
  and/or modify it under the terms of the GNU General Public License
@@ -47,13 +47,12 @@
 #include "faust/gui/GTKUI.h"
 #include "faust/misc.h"
 #include "faust/audio/coreaudio-dsp.h"
+#ifdef FIXED_POINT
+#include "faust/dsp/fixed-point.h"
+#endif
 
 #ifdef OSCCTRL
 #include "faust/gui/OSCUI.h"
-static void osc_compute_callback(void* arg)
-{
-    static_cast<OSCUI*>(arg)->endBundle();
-}
 #endif
 
 #ifdef HTTPCTRL
@@ -62,6 +61,7 @@ static void osc_compute_callback(void* arg)
 
 #ifdef SOUNDFILE
 #include "faust/gui/SoundUI.h"
+#include "faust/dsp/dsp-tools.h"
 #endif
 
 // Always include this file, otherwise -nvoices only mode does not compile....
@@ -120,22 +120,23 @@ int main(int argc, char* argv[])
     char rcfilename[256];
     char* home = getenv("HOME");
     bool midi_sync = false;
+    bool midi = false;
     int nvoices = 0;
     bool control = true;
     
     if (isopt(argv, "-help") || isopt(argv, "-h")) {
-        cout << argv[0] << " [--frequency <val>] [--buffer <val>] [--nvoices <val>] [--control <0/1>] [--group <0/1>] [--virtual-midi <0/1>]\n";
+        cout << argv[0] << " [--sample-rate <val>] [--buffer <val>] [--nvoices <val>] [--control <0/1>] [--group <0/1>] [--virtual-midi <0/1>]\n";
         exit(1);
     }
     
     mydsp* tmp_dsp = new mydsp();
-    MidiMeta::analyse(tmp_dsp, midi_sync, nvoices);
+    MidiMeta::analyse(tmp_dsp, midi, midi_sync, nvoices);
     delete tmp_dsp;
     
     snprintf(name, 256, "%s", basename(argv[0]));
     snprintf(rcfilename, 256, "%s/.%src", home, name);
     
-    long srate = (long)lopt(argv, "--frequency", -1);
+    long srate = (long)lopt(argv, "--sample-rate", 44100);
     int fpb = lopt(argv, "--buffer", 512);
     bool is_virtual = lopt(argv, "--virtual-midi", false);
     
@@ -218,30 +219,33 @@ int main(int argc, char* argv[])
     cout << "HTTPD is on" << endl;
 #endif
     
+#ifdef SOUNDFILE
+    {
+        // Init default DSP to get the SR
+        coreaudio audio(srate, fpb);
+        default_dsp def_dsp;
+        if (!audio.init(name, &def_dsp)) {
+            cerr << "Unable to init audio" << endl;
+            exit(1);
+        }
+        // After audio init to get SR
+        srate = audio.getSampleRate();
+    }
+    SoundUI soundinterface("", srate);
+    DSP->buildUserInterface(&soundinterface);
+#endif
+    
     coreaudio audio(srate, fpb);
     if (!audio.init(name, DSP)) {
         cerr << "Unable to init audio" << endl;
         exit(1);
     }
    
-// After audio init to get SR
-#ifdef SOUNDFILE
-    // Use bundle path
-    SoundUI soundinterface("", audio.getSampleRate());
-    DSP->buildUserInterface(&soundinterface);
-#endif
-    
 #ifdef OSCCTRL
     OSCUI oscinterface(name, argc, argv);
     DSP->buildUserInterface(&oscinterface);
     cout << "OSC is on" << endl;
-    audio.addControlCallback(osc_compute_callback, &oscinterface);
 #endif
-    
-    if (!audio.start()) {
-        cerr << "Unable to start audio" << endl;
-        exit(1);
-    }
     
     cout << "ins " << audio.getNumInputs() << endl;
     cout << "outs " << audio.getNumOutputs() << endl;
@@ -266,6 +270,11 @@ int main(int argc, char* argv[])
     // After the allocation of controllers
     finterface.recallState(rcfilename);
     
+    if (!audio.start()) {
+        cerr << "Unable to start audio" << endl;
+        exit(1);
+    }
+    
     interface->run();
     
 #ifdef MIDICTRL
@@ -280,5 +289,5 @@ int main(int argc, char* argv[])
     return 0;
 }
 
-/******************** END bench.cpp ****************/
+/******************** END ca-gtk.cpp ****************/
 

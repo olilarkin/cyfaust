@@ -1,9 +1,13 @@
 //################################## misceffects.lib ##########################################
-// Collection of audio effects library. Its official prefix is `ef`.
+// Miscellaneous Effects library. Its official prefix is `ef`.
+//
+// This library contains a collection of diverse audio effects and utilities
+// not included in other specialized Faust libraries. It includes filtering, mixing, time based, pitch shifters, 
+// and other creative or experimental signal processing components for sound design and musical applications.
 //
 // The library is organized into 7 sections:
 //
-// * [Dynamic](#Dynamic)
+// * [Dynamic](#dynamic)
 // * [Fibonacci](#fibonacci)
 // * [Filtering](#filtering)
 // * [Meshes](#meshes)
@@ -13,6 +17,7 @@
 // * [Saturators](#saturators)
 //
 // #### References
+//
 // * <https://github.com/grame-cncm/faustlibraries/blob/master/misceffects.lib>
 //########################################################################################
 
@@ -51,6 +56,7 @@ closed source license or any other license if you decide so.
 ma = library("maths.lib");
 ba = library("basics.lib");
 de = library("delays.lib");
+os = library("oscillators.lib");
 si = library("signals.lib");
 an = library("analyzers.lib");
 fi = library("filters.lib");
@@ -59,7 +65,7 @@ aa = library("aanl.lib");
 ef = library("misceffects.lib"); // for compatible copy/paste out of this file
 
 declare name "Misc Effects Library";
-declare version "2.4.0"; 
+declare version "2.5.2"; 
 
 //======================================Dynamic===========================================
 //========================================================================================
@@ -81,7 +87,14 @@ declare version "2.4.0";
 // * `offset`: constant added before nonlinearity to give even harmonics. Note: offset
 //    can introduce a nonzero mean - feed cubicnl output to dcblocker to remove this.
 //
-// #### References:
+// #### Test
+// ```
+// ef = library("misceffects.lib");
+// os = library("oscillators.lib");
+// cubicnl_test = os.osc(440) : ef.cubicnl(0.5, 0.0);
+// ```
+//
+// #### References
 //
 // * <https://ccrma.stanford.edu/~jos/pasp/Cubic_Soft_Clipper.html>
 // * <https://ccrma.stanford.edu/~jos/pasp/Nonlinear_Distortion.html>
@@ -118,6 +131,13 @@ declare cubicnl_nodc license "STK-4.3";
 // * `hold`: hold time = time (sec) gate stays open after signal level < thresh (e.g., 0.1 s)
 // * `rel`: release time = time constant (sec) for gate to close (e.g., 0.020 s = 20 ms)
 //
+// #### Test
+// ```
+// ef = library("misceffects.lib");
+// os = library("oscillators.lib");
+// gate_mono_test = os.osc(440) : ef.gate_mono(-60, 0.0001, 0.1, 0.02);
+// ```
+//
 // #### References
 //
 // * <http://en.wikipedia.org/wiki/Noise_gate>
@@ -145,6 +165,13 @@ declare gate_mono license "STK-4.3";
 // * `att`: attack time = time constant (sec) for gate to open (e.g., 0.0001 s = 0.1 ms)
 // * `hold`: hold time = time (sec) gate stays open after signal level < thresh (e.g., 0.1 s)
 // * `rel`: release time = time constant (sec) for gate to close (e.g., 0.020 s = 20 ms)
+//
+// #### Test
+// ```
+// ef = library("misceffects.lib");
+// os = library("oscillators.lib");
+// gate_stereo_test = os.osc(440), os.osc(441) : ef.gate_stereo(-60, 0.0001, 0.1, 0.02);
+// ```
 //
 // #### References
 //
@@ -189,6 +216,12 @@ declare gate_gain_mono license "STK-4.3";
 //
 // * `N`: the Fibonacci system's order, where 2 is standard
 //
+// #### Test
+// ```
+// ef = library("misceffects.lib");
+// fibonacci_test = 1 : ef.fibonacci(2);
+// ```
+//
 // #### Example
 // Generate the famous series: [1, 1, 2, 3, 5, 8, 13, ...]
 //
@@ -214,6 +247,12 @@ fibonacci(order) = +~(_<:sum(i, order, @(i)):>_);
 // Where:
 //
 // * `wave`: a waveform such as `waveform{1, 1}`
+//
+// #### Test
+// ```
+// ef = library("misceffects.lib");
+// fibonacciGeneral_test = 1 : ef.fibonacciGeneral(waveform{2, 3});
+// ```
 //
 // #### Example:
 // Use the update equation `y = 2*y' + 3*y'' + 4*y'''`
@@ -243,6 +282,12 @@ with {
 // Where:
 //
 // * `N`: The number of Fibonacci numbers to generate as channels.
+// 
+// #### Test
+// ```
+// ef = library("misceffects.lib");
+// fibonacciSeq_test = ef.fibonacciSeq(5);
+// ```
 // 
 //------------------------------------------------------------
 
@@ -274,6 +319,19 @@ declare fibonacciSeq author "Dario Sanfilippo";
 // ```
 // _ : speakerbp(f1,f2) : _
 // ```
+//
+// Where:
+//
+// * `f1`: low-frequency break point in Hz for the speaker model
+// * `f2`: high-frequency lowpass cutoff in Hz for the speaker model
+//
+// #### Test
+// ```
+// ef = library("misceffects.lib");
+// os = library("oscillators.lib");
+// speakerbp_test = os.osc(440) : ef.speakerbp(100.0, 5000.0);
+// ```
+//
 // #### Example
 //
 // Based on measured Celestion G12 (12" speaker):
@@ -305,6 +363,13 @@ declare speakerbp license "STK-4.3";
 // * `B`: string inharmonicity coefficient (0.0001 is typical)
 // * `f0`: fundamental frequency in Hz
 //
+// #### Test
+// ```
+// ef = library("misceffects.lib");
+// os = library("oscillators.lib");
+// piano_dispersion_filter_test = os.osc(110) : ef.piano_dispersion_filter(4, 0.0001, 110);
+// ```
+//
 // #### Outputs
 //
 // * MINUS the estimated delay at `f0` of allpass chain in samples,
@@ -312,7 +377,7 @@ declare speakerbp license "STK-4.3";
 //     from delay-line length.
 // * Output signal from allpass chain
 //
-// #### Reference
+// #### References
 //
 // * "Dispersion Modeling in Waveguide Piano Synthesis Using Tunable
 // Allpass Filters", by Jukka Rauhala and Vesa Valimaki, DAFX-2006, pp. 71-76
@@ -363,11 +428,18 @@ declare piano_dispersion_filter license "STK-4.3";
 //
 // * `w`: stereo width between 0 and 1
 //
+// #### Test
+// ```
+// ef = library("misceffects.lib");
+// os = library("oscillators.lib");
+// stereo_width_test = os.osc(440), os.osc(550) : ef.stereo_width(0.5);
+// ```
+//
 // At `w=0`, the output signal is mono ((left+right)/2 in both channels).
 // At `w=1`, there is no effect (original stereo image).
 // Thus, w between 0 and 1 varies stereo width from 0 to "original".
 //
-// #### Reference
+// #### References
 //
 // * "Applications of Blumlein Shuffling to Stereo Microphone Techniques"
 // Michael A. Gerzon, JAES vol. 42, no. 6, June 1994
@@ -401,9 +473,11 @@ declare stereo_width license "STK-4.3";
 //
 // * `N`: number of nodes along each edge - a power of two (1,2,4,8,...)
 //
-// #### Reference
-//
-// <https://ccrma.stanford.edu/~jos/pasp/Digital_Waveguide_Mesh.html>
+// #### Test
+// ```
+// ef = library("misceffects.lib");
+// mesh_square_test = (1,0.5,-0.5,0.25) : ef.mesh_square(1);
+// ```
 //
 // #### Signal Order In and Out
 //
@@ -462,6 +536,11 @@ declare stereo_width license "STK-4.3";
 //        3So -> 1Wi, 3Wo -> 3Wi, 4So -> 2Ei, 4Eo -> 4Ei
 //
 // A routing matrix can be used to obtain other connection geometries.
+//
+// #### References
+//
+// <https://ccrma.stanford.edu/~jos/pasp/Digital_Waveguide_Mesh.html>
+//
 //------------------------------------------------------------
 // four-port scattering junction:
 mesh_square(1) =
@@ -539,8 +618,14 @@ dwmEnv(wetAmount, FX) = environment
 };
 
 
-//---------------`(ef.)dryWetMixer`-------------
-// Linear dry-wet mixer for a N inputs and N outputs effect.
+//---------------`(ef.)dryWetMixer`--------------------------------------------
+// Linear dry-wet mixer for an N-inputs, N-outputs effect. The dry and wet
+// gains sum to 1 for all positions, so this mixer is mono-safe but not
+// constant-power: total power dips at the midpoint (each channel at −6 dB).
+//
+// * `wetAmount = 0`  : dry = 1.0 (0 dB),  wet = 0
+// * `wetAmount = 0.5`: dry = 0.5 (−6 dB), wet = 0.5 (−6 dB)
+// * `wetAmount = 1`  : dry = 0,           wet = 1.0 (0 dB)
 //
 // #### Usage
 //
@@ -550,27 +635,70 @@ dwmEnv(wetAmount, FX) = environment
 //
 // Where:
 //
-// * `wetAmount`: the wet amount (0-1). 0 produces only the dry signal and 1 produces only the wet signal
-// * `FX`: an arbitrary effect (N inputs and N outputs) to apply to the input bus
+// * `wetAmount`: the wet amount (0-1). 0 produces only the dry signal at
+//   unity, and 1 produces only the wet signal at unity
+// * `FX`: an arbitrary effect (N inputs and N outputs) to apply to the
+//   input bus
+//
+// #### Test
+// ```
+// ef = library("misceffects.lib");
+// os = library("oscillators.lib");
+// fi = library("filters.lib");
+// dryWetMixer_test = os.osc(440) : ef.dryWetMixer(0.5, fi.dcblocker);
+// ```
 //------------------------------------------------------------
 declare dryWetMixer author "David Braun, revised by Stéphane Letz";
 
 dryWetMixer(wetAmount, FX) = dwmEnv(wetAmount, FX).dryWetMixer;
 
 
-//---------------`(ef.)dryWetMixerConstantPower`-------------
-// Constant-power dry-wet mixer for a N inputs and N outputs effect.
+//---------------`(ef.)dryWetMixerConstantPower`-------------------------------
+// Constant-power dry-wet mixer for an N-inputs, N-outputs effect. The dry
+// input is scaled by cos(θ)/√2 and the wet output by sin(θ)/√2, where
+// θ = π*wetAmount/2.
+//
+// * `wetAmount = 0`  : dry = 1/√2 ≈ 0.707 (−3 dB), wet = 0
+// * `wetAmount = 0.5`: dry = 0.5 (−6 dB),          wet = 0.5 (−6 dB)
+// * `wetAmount = 1`  : dry = 0,                    wet = 1/√2 ≈ 0.707 (−3 dB)
+//
+// #### Normalization
+//
+// A standard constant-power crossfade uses bare cos/sin gains, which peak at
+// unity (0 dB) when fully dry or fully wet and dip to 1/√2 (−3 dB) at center.
+// This implementation divides by √2, which makes the mixer mono-safe: the sum
+// of the dry and wet gains is bounded by 1 for all positions:
+//
+//   dryGain + wetGain = (cos θ + sin θ) / √2 ≤ 1
+//
+// This holds because cos θ + sin θ peaks at √2 (at θ = π/4), and √2/√2 = 1.
+// As a result, if the dry and wet paths carry correlated or in-phase material,
+// their sum can never clip. Total power (dryGain² + wetGain²) is constant at
+// 0.5 for all positions.
+//
+// Note that the extremes attenuate by −3 dB rather than passing at unity. Use
+// `dryWetMixer` if unity passthrough at the extremes is required.
 //
 // #### Usage
 //
 // ```
-// si.bus(inputs(FX)) : dryWetMixerConstantPower(wetAmount, FX) :si.bus(inputs(FX))
+// si.bus(inputs(FX)) : dryWetMixerConstantPower(wetAmount, FX) : si.bus(inputs(FX))
 // ```
 //
 // Where:
 //
-// * `wetAmount`: the wet amount (0-1). 0 produces only the dry signal and 1 produces only the wet signal
-// * `FX`: an arbitrary effect (N inputs and N outputs) to apply to the input bus
+// * `wetAmount`: the wet amount (0-1). 0 produces only the dry signal at −3 dB
+//   and 1 produces only the wet signal at −3 dB
+// * `FX`: an arbitrary effect (N inputs and N outputs) to apply to the input
+//   bus
+//
+// #### Test
+// ```
+// ef = library("misceffects.lib");
+// os = library("oscillators.lib");
+// fi = library("filters.lib");
+// dryWetMixerConstantPower_test = os.osc(440) : ef.dryWetMixerConstantPower(0.5, fi.dcblocker);
+// ```
 //------------------------------------------------------------
 declare dryWetMixerConstantPower author "David Braun, revised by Stéphane Letz";
 
@@ -612,6 +740,12 @@ mixingEnv = environment
   // * `N`: number of output weights
   // * `m`: [0;N-1] (float) blend index. If m is outside [0;N-1], the behavior will loop.
   //.       So m=-N, m=0, and m=N should give the same output.
+  //
+  // #### Test
+  // ```
+// ef = library("misceffects.lib");
+// weightsPowerLoop_test = ef.mixingEnv.weightsPowerLoop(4, 1.2);
+  // ```
   weightsPowerLoop(N, m) = par(i, N, gain(i))
   with {
     gain(i) = phaseLoop(N, m, i) : phase2PowerWeight;
@@ -653,22 +787,22 @@ mixingEnv = environment
 
   // Suppose `sounds` is N buses, each of C channels.
   // We want to linearly mix the buses using index `m` [0;N-1]
-  mixLinearClamp(N, C, m, sounds) = si.vecOp((weights, sounds), *) :> si.bus(C)
+  mixLinearClamp(N, C, m) = si.vecOp((weights, si.bus(N)), *) :> si.bus(C)
   with {
     weights = weightsLinearClamp(N, m) <: ro.interleave(N, C);
   };
 
-  mixLinearLoop(N, C, m, sounds) = si.vecOp((weights, sounds), *) :> si.bus(C)
+  mixLinearLoop(N, C, m) = si.vecOp((weights, si.bus(N)), *) :> si.bus(C)
   with {
     weights = weightsLinearLoop(N, m) <: ro.interleave(N, C);
   };
 
-  mixPowerClamp(N, C, m, sounds) = si.vecOp((weights, sounds), *) :> si.bus(C)
+  mixPowerClamp(N, C, m) = si.vecOp((weights, si.bus(N)), *) :> si.bus(C)
   with {
     weights = weightsPowerClamp(N, m) <: ro.interleave(N, C);
   };
 
-  mixPowerLoop(N, C, m, sounds) = si.vecOp((weights, sounds), *) :> si.bus(C)
+  mixPowerLoop(N, C, m) = si.vecOp((weights, si.bus(N)), *) :> si.bus(C)
   with {
     weights = weightsPowerLoop(N, m) <: ro.interleave(N, C);
   };
@@ -693,6 +827,12 @@ mixingEnv = environment
 // * `N`: the number of input buses
 // * `C`: the number of channels in each bus
 // * `mix`: the mixing index, continuous in [0;N-1].
+//
+// #### Test
+// ```
+// ef = library("misceffects.lib");
+// mixLinearClamp_test = (1,0.5,0,0) : ef.mixLinearClamp(4, 1, 1.2);
+// ```
 //---------------------------------------------------------------------------------------
 declare mixLinearClamp author "David Braun";
 
@@ -715,6 +855,12 @@ mixLinearClamp = mixingEnv.mixLinearClamp;
 // * `N`: the number of input buses
 // * `C`: the number of channels in each bus
 // * `mix`: the mixing index (N-1) selects the last bus, and 0 or N selects the 0th bus.
+//
+// #### Test
+// ```
+// ef = library("misceffects.lib");
+// mixLinearLoop_test = (1,0,0,0) : ef.mixLinearLoop(4, 1, -0.3);
+// ```
 //---------------------------------------------------------------------------------------
 declare mixLinearLoop author "David Braun";
 
@@ -739,6 +885,12 @@ mixLinearLoop = mixingEnv.mixLinearLoop;
 // * `N`: the number of input buses
 // * `C`: the number of channels in each bus
 // * `mix`: the mixing index, continuous in [0;N-1].
+//
+// #### Test
+// ```
+// ef = library("misceffects.lib");
+// mixPowerClamp_test = (1,0,0,0) : ef.mixPowerClamp(4, 1, 1.5);
+// ```
 //---------------------------------------------------------------------------------------
 declare mixPowerClamp author "David Braun";
 
@@ -761,6 +913,12 @@ mixPowerClamp = mixingEnv.mixPowerClamp;
 // * `N`: the number of input buses
 // * `C`: the number of channels in each bus
 // * `mix`: the mixing index (N-1) selects the last bus, and 0 or N selects the 0th bus.
+//
+// #### Test
+// ```
+// ef = library("misceffects.lib");
+// mixPowerLoop_test = (1,0,0,0) : ef.mixPowerLoop(4, 1, -0.5);
+// ```
 //---------------------------------------------------------------------------------------
 declare mixPowerLoop author "David Braun";
 
@@ -785,6 +943,13 @@ mixPowerLoop = mixingEnv.mixPowerLoop;
 // * `maxDuration`: the max echo duration in seconds
 // * `duration`: the echo duration in seconds
 // * `feedback`: the feedback coefficient
+
+// #### Test
+// ```
+// ef = library("misceffects.lib");
+// os = library("oscillators.lib");
+// echo_test = os.osc(440) : ef.echo(0.5, 0.25, 0.4);
+// ```
 //----------------------------------------------------
 declare echo author "Romain Michon";
 
@@ -796,7 +961,7 @@ with{
 
 // TODO demo function for echo
 
-//--------------------`(ef.)reverseEchoN(nChans,delay)`-------------------
+//--------------------`(ef.)reverseEchoN`-------------------
 // Reverse echo effect.
 //
 // #### Usage
@@ -807,8 +972,15 @@ with{
 //
 // Where:
 //
-// *  `N`: Number of output channels desired (1 or more), a constant numerical expression
+// * `N`: Number of output channels desired (1 or more), a constant numerical expression
 // * `delay`: echo delay (integer power of 2)
+//
+// #### Test
+// ```
+// ef = library("misceffects.lib");
+// os = library("oscillators.lib");
+// reverseEchoN_test = os.osc(440) : ef.reverseEchoN(2, 32);
+// ```
 //
 // #### Demo
 //
@@ -827,7 +999,7 @@ declare reverseEchoN author "Julius O. Smith III";
 declare reverseEchoN license "STK-4.3";
 
 
-//-------------------`(ef.)reverseDelayRamped(delay,phase)`------------------
+//-------------------`(ef.)reverseDelayRamped`------------------
 // Reverse delay with amplitude ramp.
 //
 // #### Usage
@@ -840,6 +1012,13 @@ declare reverseEchoN license "STK-4.3";
 //
 // * `delay`: echo delay (integer power of 2)
 // * `phase`: float between 0 and 1 giving ramp delay phase*delay
+//
+// #### Test
+// ```
+// ef = library("misceffects.lib");
+// os = library("oscillators.lib");
+// reverseDelayRamped_test = os.osc(440) : ef.reverseDelayRamped(32, 0.6);
+// ```
 //
 // #### Demo
 //
@@ -858,7 +1037,7 @@ reverseDelayRamped(delMax,phs) = rampGain * de.delay(delMax,del) with {
 declare reverseDelayRamped author "Julius O. Smith III";
 declare reverseDelayRamped license "STK-4.3";
 
-//-------------------`(ef.)uniformPanToStereo(nChans)`------------------
+//-------------------`(ef.)uniformPanToStereo`------------------
 // Pan nChans channels to the stereo field, spread uniformly left to right.
 //
 // #### Usage
@@ -870,6 +1049,13 @@ declare reverseDelayRamped license "STK-4.3";
 // Where:
 //
 // * `N`: Number of input channels to pan down to stereo, a constant numerical expression
+//
+// #### Test
+// ```
+// ef = library("misceffects.lib");
+// os = library("oscillators.lib");
+// uniformPanToStereo_test = os.osc(440), os.osc(550), os.osc(660) : ef.uniformPanToStereo(3);
+// ```
 //
 // #### Demo
 //
@@ -884,6 +1070,90 @@ uniformPanToStereo(N) = si.bus(N) <: par(i,2*N,_) :
 
 declare uniformPanToStereo author "Julius O. Smith III";
 declare uniformPanToStereo license "STK-4.3";
+
+//---------------------`(ef.)tapeStop`-----------------------------------------
+// A tape-stop effect, like putting a finger on a vinyl record player.
+//
+// #### Usage:
+//
+// ```
+// _,_ : tapeStop(2, LAGRANGE_ORDER, MAX_TIME_SAMP, 
+//               crossfade, gainAlpha, stopAlpha, stopTime, stop) : _,_
+// ```
+//
+// ```
+// _ : tapeStop(1, LAGRANGE_ORDER, MAX_TIME_SAMP, 
+//              crossfade, gainAlpha, stopAlpha, stopTime, stop) : _
+// ```
+//
+// Where:
+//
+// * `C`: The number of input and output channels.
+// * `LAGRANGE_ORDER`: The order of the Lagrange interpolation on the delay line. [2-3] recommended.
+// * `MAX_TIME_SAMP`: Maximum stop time in samples
+// * `crossfade`: A crossfade in samples to apply when resuming normal playback. Crossfade is not applied during the enabling of the tape-stop.
+// * `gainAlpha`: During the tape-stop, lower alpha stays louder longer. Safe values are in the range [.01,2].
+// * `stopAlpha`: `stopAlpha==1` represents a linear deceleration (constant force). `stopAlpha<1` represents an initially weaker, then stronger force. `stopAlpha>1` represents an initially stronger, then weaker force. Safe values are in the range [.01,2].
+// * `stopTime`: Desired duration of the stop time, in samples.
+// * `stop`: When `stop` becomes positive, the tape-stop effect will start. When `stop` becomes zero, normal audio will resume via crossfade.
+
+// #### Test
+// ```
+// ef = library("misceffects.lib");
+// os = library("oscillators.lib");
+// tapeStop_test = os.osc(440), os.osc(441) : ef.tapeStop(2, 3, 44100, 128, 1.0, 1.0, 22050, button("stop"));
+// ```
+//-----------------------------------------------------------------------------
+tapeStop(C, LAGRANGE_ORDER, MAX_TIME_SAMP, crossfade, gainAlpha, stopAlpha, stopTime, stop) = 
+(tapeStopTick(C) ~ _) : !,si.bus(C)
+with {
+    tapeStopTick(C, _delaySamples) = delaySamples, circuitFinal
+    with {
+        // Where `stopCounter` goes from 0 to stopTime (or higher)
+        // When `stopCounter` is 0, curve's output is 1.
+        // When `stopCounter` is stopTime, curve's output is 0.
+        curve(alpha) = 1-stopCounter/stopTime : max(0) : pow(_, alpha)
+        with {
+            // when stop is pulsed, count samples starting at 0
+            stopCounter = *(ba.if(stop&(1-stop'),0,1))+1~_ : -(1);
+        };
+        minDelay = (LAGRANGE_ORDER-1)/2;
+        delayFunc(curDel) = par(i, C, de.fdelayltv(LAGRANGE_ORDER, MAX_TIME_SAMP, max(curDel, minDelay)));
+
+        delaySamples = ba.if(stop&(1-stop'), minDelay, _delaySamples) + delayDelta
+        with {
+            /*
+            Velocity describes the velocity of the read-index in units of samples per sample.
+            If the velocity is 1, then the read-index is moving as fast as the write-index
+            is moving, and there is no delay. If the velocity is 0, then the read-index is "stuck"
+            on a particular location. During a tape-stop, our technique is to animate velocity
+            from 1 to 0 according to a curve based on stopAlpha. We discretize the accumulated
+            delay with delayDelta. Note that when velocity is zero, then delayDelta is 1. At this
+            moment the delay line wrote 1 new sample (as always), but our delayDelta INCREASED by one.
+            This means it's playing same sample twice in a row, and the record player is motionless.
+            When `stop` triggers by becoming 1, then delaySamples is reset to `minDelay`. At this moment
+            we should have already been listening to the circuitNormal which is using `minDelay`.
+            Therefore, there isn't a click.
+            */
+            velocity = curve(stopAlpha);
+            delayDelta = 1-velocity;
+        };
+
+        circuitNormal = delayFunc(0); // Don't use si.bus(C) because of minDelay
+        circuitSlowdown = delayFunc(delaySamples) : par(i, C, _*g)
+        with {
+            g = curve(gainAlpha);
+        };
+        circuitFinal = ba.selectmulti(actualCrossfade, (circuitNormal, circuitSlowdown), stop)
+        with {
+            actualCrossfade = ba.if(stop,0,crossfade); // only crossfade when resuming normal playback
+        };
+    };
+};
+
+declare tapeStop author "David Braun";
+declare tapeStop copyright "Copyright (C) 2024 by David Braun <braun@ccrma.stanford.edu>";
+declare tapeStop license "MIT-style STK-4.3 license";
 
 //=======================================Pitch Shifting===================================
 //========================================================================================
@@ -903,6 +1173,13 @@ declare uniformPanToStereo license "STK-4.3";
 // * `w`: the window length (samples)
 // * `x`: crossfade duration duration (samples)
 // * `s`: shift (semitones)
+
+// #### Test
+// ```
+// ef = library("misceffects.lib");
+// os = library("oscillators.lib");
+// transpose_test = os.osc(440) : ef.transpose(1024, 512, 7);
+// ```
 //-----------------------------------------
 transpose(w, x, s, sig) = de.fdelay(maxDelay,d,sig)*ma.fmin(d/x,1) +
     de.fdelay(maxDelay,d+w,sig)*(1-ma.fmin(d/x,1))
@@ -910,6 +1187,45 @@ with {
     maxDelay = 65536;
     i = 1 - pow(2, s/12);
     d = i : (+ : +(w) : fmod(_,w)) ~ _;
+};
+
+//--------------`(ef.)doppler_shift`----------------
+// Pitch shifter for signals with known fundamental frequency.
+// Uses Doppler effect from a continuously ramping delay line,
+// with phase-coherent phasor reset synced to the signal period.
+// Best suited for harmonic/periodic signals like oscillator outputs.
+//
+// #### Usage
+//
+// ```
+// _ : doppler_shift(freq, ratio) : _
+// ```
+//
+// Where:
+//
+// * `freq`: fundamental frequency of the input signal (Hz)
+// * `ratio`: pitch ratio (1.0 = no shift, 2.0 = octave up, 0.5 = octave down)
+//
+// #### Test
+// ```
+// ef = library("misceffects.lib");
+// os = library("oscillators.lib");
+// doppler_shift_test = os.sawtooth(220) : ef.doppler_shift(220, 1.5);
+// ```
+//
+// #### References
+//
+// * <https://www.researchgate.net/publication/325654284>
+//-----------------------------------------
+declare doppler_shift author "David Lowenfels";
+
+doppler_shift(freq, ratio, sig) = de.fdelaylti(4, MAX_DELAY, delay_samples, sig)
+with {
+    MAX_DELAY = 4096;
+    period_samples = ma.SR / freq;
+    phasor_freq = freq * (ratio - 1);
+    phasor = os.phasor(1, phasor_freq);
+    delay_samples = (2 - phasor) * period_samples;
 };
 
 //=======================================Saturators=======================================
@@ -922,18 +1238,6 @@ nonlinearityEnv = environment
   makeOdd(f, x) = x : optionalNegate : f : optionalNegate
   with {
     optionalNegate(y) = ba.if(x<0, -y, y);
-  };
-
-  // Quadratic Soft-Clip
-  // coded by David Braun
-  // Reference:
-  // M. Schetzen: The Volterra and Wiener Theories of Nonlinear Systems. Robert Krieger Publishing, 1980.
-  softclipQuadratic(x) = makeOdd(f, x)
-  with {
-    f(x) = ba.if(x <= 1./3., 2*x, ba.if(x <= 2./3.,y,1))
-    with {
-      y = (3-(2-3*x)^2)/3;
-    };
   };
 
   // Wavefolder/Wavefolding
@@ -960,12 +1264,33 @@ nonlinearityEnv = environment
 // #### Usage
 //
 // ```
-// _ : softclipQuadratic : _;
+// _ : softclipQuadratic : _
 // ```
+//
+// #### Test
+// ```
+// ef = library("misceffects.lib");
+// os = library("oscillators.lib");
+// softclipQuadratic_test = os.osc(440) : ef.softclipQuadratic;
+// ```
+//
+// #### References
+//
+// * U. Zölzer: Digital Audio Signal Processing. John Wiley & Sons Ltd, 2022.
 //---------------------------------------------------------------------------------------
 declare softclipQuadratic author "David Braun";
+declare softclipQuadratic copyright "Copyright (C) 2024 David Braun";
+declare softclipQuadratic license "MIT license";
 
-softclipQuadratic = nonlinearityEnv.softclipQuadratic;
+softclipQuadratic(x) = ba.ifNcNo(2, 1, 
+    absX < 1/3, 2*x,
+    absX <= 2/3, ma.signum(x)*(3-(2-absX*3)^2)/3,
+    ma.signum(x)
+    )
+with {
+    absX = abs(x);
+};
+
 
 //---------------`(ef.)wavefold`-------------------------------------------------
 // Wavefolding nonlinearity.
@@ -973,17 +1298,23 @@ softclipQuadratic = nonlinearityEnv.softclipQuadratic;
 // #### Usage
 //
 // ```
-// _ : wavefold(width) : _;
+// _ : wavefold(width) : _
 // ```
 //
 // Where:
 //
 // * `width`: The width of the folded section [0..1] (float).
+//
+// #### Test
+// ```
+// ef = library("misceffects.lib");
+// os = library("oscillators.lib");
+// wavefold_test = os.osc(440) : ef.wavefold(0.5);
+// ```
 //---------------------------------------------------------------------------------------
 declare wavefold author "David Braun";
 
 wavefold = nonlinearityEnv.wavefold;
-
 
 //////////////////////////////////Deprecated Functions////////////////////////////////////
 // This section implements functions that used to be in music.lib but that are now

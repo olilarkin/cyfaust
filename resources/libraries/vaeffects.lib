@@ -1,18 +1,35 @@
 //#################################### vaeffects.lib ########################################
-// A library of virtual analog filter effects. Its official prefix is `ve`.
+// Virtual Analog Effects (VAE) library. Its official prefix is `ve`.
+//
+// This library provides virtual analog (VA) audio effects modeled after classic
+// analog circuitry. It includes nonlinear filters and effects.
+//
+// The virtual analog filter library is organized into 7 sections:
+//
+// * [Moog Filters](#moog-filters)
+// * [Korg 35 Filters](#korg-35-filters)
+// * [Oberheim Filters](#oberheim-filters)
+// * [Sallen Key Filters](#sallen-key-filters)
+// * [Korg 35 Filters](#korg-35-filters)
+// * [Vicanek's matched (decramped) second-order filters](#vicaneks-matched-decramped-second-order-filters)
+// * [Effects](#effects)
 //
 // #### References
+//
 // * <https://github.com/grame-cncm/faustlibraries/blob/master/vaeffects.lib>
 //########################################################################################
 
+ba = library("basics.lib");
 ma = library("maths.lib");
 si = library("signals.lib");
 an = library("analyzers.lib");
 fi = library("filters.lib");
 ef = library("misceffects.lib");
+wd = library("wdmodels.lib");
+it = library("interpolators.lib");
 
 declare name "Faust Virtual Analog Filter Effect Library";
-declare version "1.2.0";
+declare version "1.5.0";
 
 //########################################################################################
 /************************************************************************
@@ -46,13 +63,26 @@ Michon and Julius O. Smith III, and are released under the
 // ```
 // _ : moog_vcf(res,fr) : _
 // ```
+//
 // Where:
 //
 // * `res`: normalized amount of corner-resonance between 0 and 1 
 // (0 is no resonance, 1 is maximum)
 // * `fr`: corner-resonance frequency in Hz (less than SR/6.3 or so)
 //
+// #### Test
+// ```
+// ve = library("vaeffects.lib");
+// os = library("oscillators.lib");
+// moog_vcf_test = os.osc(440)
+//   : ve.moog_vcf(
+//       hslider("moog_vcf:res", 0.5, 0, 1, 0.01),
+//       hslider("moog_vcf:freq", 1000, 50, 4000, 1)
+//     );
+// ```
+//
 // #### References
+//
 // * <https://ccrma.stanford.edu/~stilti/papers/moogvcf.pdf>
 // * <https://ccrma.stanford.edu/~jos/pasp/vegf.html>
 //------------------------------------------------------------
@@ -87,8 +117,19 @@ with {
 // Where:
 //
 // * `res`: normalized amount of corner-resonance between 0 and 1
-// 	(0 is min resonance, 1 is maximum)
+// (0 is min resonance, 1 is maximum)
 // * `fr`: corner-resonance frequency in Hz
+//
+// #### Test
+// ```
+// ve = library("vaeffects.lib");
+// os = library("oscillators.lib");
+// moog_vcf_2b_test = os.osc(330)
+//   : ve.moog_vcf_2b(
+//       hslider("moog_vcf_2b:res", 0.4, 0, 1, 0.01),
+//       hslider("moog_vcf_2b:freq", 1200, 50, 6000, 1)
+//     );
+// ```
 //------------------------------------------------------------
 declare moog_vcf_2b author "Julius O. Smith III";
 declare moog_vcf_2b copyright "Copyright (C) 2003-2019 by Julius O. Smith III <jos@ccrma.stanford.edu>";
@@ -127,19 +168,10 @@ with {
 
 
 //------------------`(ve.)moogLadder`-----------------
-// Virtual analog model of the 4th-order Moog Ladder, which is arguably the 
+// Virtual analog model of the 4th-order Moog Ladder (without any nonlinearities), which is arguably the 
 // most well-known ladder filter in analog synthesizers. Several 
 // 1st-order filters are cascaded in series. Feedback is then used, in part, to 
 // control the cut-off frequency and the resonance.
-//
-// #### References
-//
-// [Zavalishin 2012] (revision 2.1.2, February 2020): 
-//
-// * <https://www.native-instruments.com/fileadmin/ni_media/downloads/pdf/VAFilterDesign_2.1.2.pdf>
-//
-// This fix is based on Lorenzo Della Cioppa's correction to Pirkle's implementation; see this post: 
-// https://www.kvraudio.com/forum/viewtopic.php?f=33&t=571909
 //
 // #### Usage
 //
@@ -151,6 +183,23 @@ with {
 //
 // * `normFreq`: normalized frequency (0-1)
 // * `Q`: quality factor between .707 (0 feedback coefficient) to 25 (feedback = 4, which is the self-oscillating threshold).
+//
+// #### Test
+// ```
+// ve = library("vaeffects.lib");
+// os = library("oscillators.lib");
+// moogLadder_test = os.osc(220)
+//   : ve.moogLadder(
+//       hslider("moogLadder:normFreq", 0.3, 0, 1, 0.001),
+//       hslider("moogLadder:Q", 4, 0.7, 20, 0.1)
+//     );
+// ```
+//
+// #### References
+//
+// * [Zavalishin 2012] (revision 2.1.2, February 2020)
+// * <https://www.native-instruments.com/fileadmin/ni_media/downloads/pdf/VAFilterDesign_2.1.2.pdf>
+// * Lorenzo Della Cioppa's correction to Pirkle's implementation: <https://www.kvraudio.com/forum/viewtopic.php?f=33&t=571909>
 //---------------------------------------------------------------------
 declare moogLadder author "Dario Sanfilippo";
 declare moogLadder license "MIT-style STK-4.3 license";
@@ -162,9 +211,10 @@ with {
                             v4 + lp4 , // define s4
                             lp4 // system output
         with {
+            invSqrt2 = 1/sqrt(2);
             T = 1.0 / ma.SR;
-            cf = normFreq * .5 * ma.SR;
-            k = 4.0 * (Q - 0.707) / (25.0 - 0.707);
+            cf = 2*(10^(3*normFreq+1));
+            k = 4.0 * (Q - invSqrt2) / (25.0 - invSqrt2);
             omegaWarp = tan(ma.PI * cf * T);
             g = omegaWarp / (1.0 + omegaWarp);
             G = g * g * g * g; // ladder's G in generalised form y = G * xi + S
@@ -181,6 +231,80 @@ with {
         };
 };
 
+//------------------`(ve.)lowpassLadder4`-----------------
+// Topology-preserving transform implementation of a four-pole ladder lowpass.
+// This is essentially the same filter as the moogLadder above except for 
+// the parameters, which will be expressed in Hz, for the cutoff, and as a
+// raw feedback coefficient, for the resonance. 
+// Also, note that the parameter order has changed.
+//
+// #### Usage
+//
+// ```
+// _ : lowpassLadder4(k, CF) : _
+// ```
+//
+// Where:
+//
+// * `k`: feedback coefficient between 0 and 4, which is the stability threshold.
+// * `CF`: the filter's cutoff in Hz.
+//
+// #### Test
+// ```
+// ve = library("vaeffects.lib");
+// os = library("oscillators.lib");
+// lowpassLadder4_test = os.osc(110)
+//   : ve.lowpassLadder4(
+//       hslider("lowpassLadder4:k", 2.0, 0, 4, 0.1),
+//       hslider("lowpassLadder4:freq", 800, 50, 5000, 1)
+//     );
+// ```
+//
+// Notes:
+// 
+// If you want to express the feedback coefficient as the resonance peak, you can use the formula: 
+//
+//      k = 4.0 - 1.0 / Q;
+//
+// where Q, between .25 and infinity, corresponds to the peak of the filter at cutoff. 
+// I.e., if you feed the filter with a sine whose frequency is the same as the cutoff, the output 
+// peak corresponds exactly to that set via the Q-param.
+// #### References
+//
+// * [Zavalishin 2012] (revision 2.1.2, February 2020)
+// * <https://www.native-instruments.com/fileadmin/ni_media/downloads/pdf/VAFilterDesign_2.1.2.pdf>
+//---------------------------------------------------------------------
+declare lowpassLadder4 author "Dario Sanfilippo";
+declare lowpassLadder4 license "MIT License";
+lowpassLadder4(k, CF, x) = loop ~ si.bus(4) : si.block(4) , _
+    with {
+        loop(s0, s1, s2, s3) = u0 , u1 , u2 , u3 , LP3
+            with {
+                PIT = ma.PI * ma.T;
+                g = tan(CF * PIT);
+                G = g / (1.0 + g);
+                oneMinusG = 1.0 - G;
+                globalG = G * G * G * G; 
+                globalS = G * (G * (G * S0 + S1) + S2) + S3; 
+                u = (x - k * globalS) / (1.0 + k * globalG); 
+                v0 = G * (u - s0);
+                v1 = G * (LP0 - s1);
+                v2 = G * (LP1 - s2);
+                v3 = G * (LP2 - s3);
+                S0 = oneMinusG * s0;
+                S1 = oneMinusG * s1;
+                S2 = oneMinusG * s2;
+                S3 = oneMinusG * s3;
+                LP0 = v0 + s0; 
+                LP1 = v1 + s1;
+                LP2 = v2 + s2;
+                LP3 = v3 + s3;
+                u0 = v0 + LP0;
+                u1 = v1 + LP1;
+                u2 = v2 + LP2;
+                u3 = v3 + LP3;
+            };
+    };
 
 //------------------`(ve.)moogHalfLadder`-----------------
 // Virtual analog model of the 2nd-order Moog Half Ladder (simplified version of
@@ -190,11 +314,6 @@ with {
 //
 // This filter was implemented in Faust by Eric Tarr during the 
 // [2019 Embedded DSP With Faust Workshop](https://ccrma.stanford.edu/workshops/faust-embedded-19/).
-// 
-// #### References
-//
-// * <https://www.willpirkle.com/app-notes/virtual-analog-moog-half-ladder-filter>
-// * <http://www.willpirkle.com/Downloads/AN-8MoogHalfLadderFilter.pdf>
 //
 // #### Usage
 //
@@ -206,6 +325,22 @@ with {
 //
 // * `normFreq`: normalized frequency (0-1)
 // * `Q`: q
+//
+// #### Test
+// ```
+// ve = library("vaeffects.lib");
+// os = library("oscillators.lib");
+// moogHalfLadder_test = os.osc(220)
+//   : ve.moogHalfLadder(
+//       hslider("moogHalfLadder:normFreq", 0.3, 0, 1, 0.001),
+//       hslider("moogHalfLadder:Q", 4, 0.7, 20, 0.1)
+//     );
+// ```
+//
+// #### References
+//
+// * <https://www.willpirkle.com/app-notes/virtual-analog-moog-half-ladder-filter>
+// * <http://www.willpirkle.com/Downloads/AN-8MoogHalfLadderFilter.pdf>
 //---------------------------------------------------------------------
 declare moogHalfLadder author "Eric Tarr";
 declare moogHalfLadder license "MIT-style STK-4.3 license";
@@ -217,8 +352,9 @@ letrec{
   'y = -(s3*B3*k):-(s2*B2*k):-(s1*B1*k):*(alpha0):-(s1):*(alpha):+(s1):-(s2):*(alpha):+(s2) <:_*-1,((-(s3):*(alpha):+(s3))*2):>_;
 }
 with{
+  invSqrt2 = 1/sqrt(2);
   freq = 2*(10^(3*normFreq+1));
-  k = 2.0*(Q - 0.707)/(25.0 - 0.707);
+  k = 2.0*(Q - invSqrt2)/(25.0 - invSqrt2);
   wd = 2*ma.PI*freq;
   T = 1/ma.SR;
   wa = (2/T)*tan(wd*T/2);
@@ -243,11 +379,6 @@ with{
 //
 // This filter was implemented in Faust by Eric Tarr during the 
 // [2019 Embedded DSP With Faust Workshop](https://ccrma.stanford.edu/workshops/faust-embedded-19/).
-// 
-// #### References
-//
-// * <https://www.willpirkle.com/virtual-analog-diode-ladder-filter/>
-// * <http://www.willpirkle.com/Downloads/AN-6DiodeLadderFilter.pdf>
 //
 // #### Usage
 //
@@ -259,6 +390,22 @@ with{
 //
 // * `normFreq`: normalized frequency (0-1)
 // * `Q`: q
+//
+// #### Test
+// ```
+// ve = library("vaeffects.lib");
+// os = library("oscillators.lib");
+// diodeLadder_test = os.osc(220)
+//   : ve.diodeLadder(
+//       hslider("diodeLadder:normFreq", 0.4, 0, 1, 0.001),
+//       hslider("diodeLadder:Q", 4, 0.7, 20, 0.1)
+//     );
+// ```
+//
+// #### References
+//
+// * <https://www.willpirkle.com/virtual-analog-diode-ladder-filter/>
+// * <http://www.willpirkle.com/Downloads/AN-6DiodeLadderFilter.pdf>
 //---------------------------------------------------------------------
 declare diodeLadder author "Eric Tarr";
 declare diodeLadder license "MIT-style STK-4.3 license";
@@ -282,7 +429,7 @@ letrec{
     _+(s4*B4*d3 + s3)*B3 : //_+S3 :
     _+(((s4*B4*d3 + s3)*B3)*d2 + s2)*B2*G3 : //_+(S3...)
     _*a2 : _-s2 : _*alpha*2 : _+s2;
-		
+
   's3 = _-(s4*B4*SG4*k) : 
     _-((s4*B4*d3+s3)*B3*SG3*k) : 
     _-(((s4*B4*d3+s3)*B3*d2 + s2)*B2*SG3*k) :
@@ -328,7 +475,8 @@ letrec{
 }
 with{
   freq = 2*(10^(3*normFreq+1));
-  k = (17 - (normFreq^10)*9.7)*(Q - 0.707)/(25.0 - 0.707);
+  invSqrt2 = 1/sqrt(2);
+  k = (17 - (normFreq^10)*9.7)*(Q - invSqrt2)/(25.0 - invSqrt2);
   wd = 2*ma.PI*freq;
   T = 1/ma.SR;
   wa = (2/T)*tan(wd*T/2);
@@ -392,6 +540,17 @@ with{
 //
 // * `normFreq`: normalized frequency (0-1)
 // * `Q`: q
+//
+// #### Test
+// ```
+// ve = library("vaeffects.lib");
+// os = library("oscillators.lib");
+// korg35LPF_test = os.osc(220)
+//   : ve.korg35LPF(
+//       hslider("korg35LPF:normFreq", 0.35, 0, 1, 0.001),
+//       hslider("korg35LPF:Q", 3.5, 0.7, 10, 0.1)
+//     );
+// ```
 //---------------------------------------------------------------------
 declare korg35LPF author "Eric Tarr";
 declare korg35LPF license "MIT-style STK-4.3 license";
@@ -403,8 +562,9 @@ letrec{
   'y = _-s1:_*alpha:_+s1:_+(s3*B3):_+(s2*B2) :_*alpha0:_-s3:_*alpha:_+s3;
 }
 with{
+  invSqrt2 = 1/sqrt(2);
   freq = 2*(10^(3*normFreq+1));
-  K = 2.0*(Q - 0.707)/(10.0 - 0.707);
+  K = 2.0*(Q - invSqrt2)/(10.0 - invSqrt2);
   wd = 2*ma.PI*freq;
   T = 1/ma.SR;
   wa = (2/T)*tan(wd*T/2);
@@ -431,6 +591,17 @@ with{
 //
 // * `normFreq`: normalized frequency (0-1)
 // * `Q`: q
+//
+// #### Test
+// ```
+// ve = library("vaeffects.lib");
+// os = library("oscillators.lib");
+// korg35HPF_test = os.osc(330)
+//   : ve.korg35HPF(
+//       hslider("korg35HPF:normFreq", 0.4, 0, 1, 0.001),
+//       hslider("korg35HPF:Q", 3.5, 0.7, 10, 0.1)
+//     );
+// ```
 //---------------------------------------------------------------------
 declare korg35HPF author "Eric Tarr";
 declare korg35HPF license "MIT-style STK-4.3 license";
@@ -442,8 +613,9 @@ letrec{
   'y = _<:(_-s1:_*alpha:_+s1)*-1,_:>_+(s3*B3):_+(s2*B2):_*alpha0;
 }
 with{
+  invSqrt2 = 1/sqrt(2);
   freq = 2*(10^(3*normFreq+1));
-  K = 2.0*(Q - 0.707)/(10.0 - 0.707);
+  K = 2.0*(Q - invSqrt2)/(10.0 - invSqrt2);
   wd = 2*ma.PI*freq;
   T = 1/ma.SR;
   wa = (2/T)*tan(wd*T/2);
@@ -482,6 +654,17 @@ with{
 //
 // * `normFreq`: normalized frequency (0-1)
 // * `Q`: q
+//
+// #### Test
+// ```
+// ve = library("vaeffects.lib");
+// os = library("oscillators.lib");
+// oberheim_test = os.osc(220)
+//   : ve.oberheim(
+//       hslider("oberheim:normFreq", 0.4, 0, 1, 0.001),
+//       hslider("oberheim:Q", 1.5, 0.5, 10, 0.1)
+//     );
+// ```
 //---------------------------------------------------------------------
 declare oberheim author "Eric Tarr";
 declare oberheim license "MIT-style STK-4.3 license";
@@ -523,6 +706,17 @@ with{
 //
 // * `normFreq`: normalized frequency (0-1)
 // * `Q`: q
+//
+// #### Test
+// ```
+// ve = library("vaeffects.lib");
+// os = library("oscillators.lib");
+// oberheimBSF_test = os.osc(220)
+//   : ve.oberheimBSF(
+//       hslider("oberheimBSF:normFreq", 0.4, 0, 1, 0.001),
+//       hslider("oberheimBSF:Q", 1.5, 0.5, 10, 0.1)
+//     );
+// ```
 //---------------------------------------------------------------------
 declare oberheimBSF author "Eric Tarr";
 declare oberheimBSF license "MIT-style STK-4.3 license";
@@ -544,6 +738,17 @@ oberheimBSF(normFreq,Q) = oberheim(normFreq,Q):_,!,!,!;
 //
 // * `normFreq`: normalized frequency (0-1)
 // * `Q`: q
+//
+// #### Test
+// ```
+// ve = library("vaeffects.lib");
+// os = library("oscillators.lib");
+// oberheimBPF_test = os.osc(220)
+//   : ve.oberheimBPF(
+//       hslider("oberheimBPF:normFreq", 0.4, 0, 1, 0.001),
+//       hslider("oberheimBPF:Q", 1.5, 0.5, 10, 0.1)
+//     );
+// ```
 //---------------------------------------------------------------------
 declare oberheimBPF author "Eric Tarr";
 declare oberheimBPF license "MIT-style STK-4.3 license";
@@ -565,6 +770,17 @@ oberheimBPF(normFreq,Q) = oberheim(normFreq,Q):!,_,!,!;
 //
 // * `normFreq`: normalized frequency (0-1)
 // * `Q`: q
+//
+// #### Test
+// ```
+// ve = library("vaeffects.lib");
+// os = library("oscillators.lib");
+// oberheimHPF_test = os.osc(220)
+//   : ve.oberheimHPF(
+//       hslider("oberheimHPF:normFreq", 0.4, 0, 1, 0.001),
+//       hslider("oberheimHPF:Q", 1.5, 0.5, 10, 0.1)
+//     );
+// ```
 //---------------------------------------------------------------------
 declare oberheimHPF author "Eric Tarr";
 declare oberheimHPF license "MIT-style STK-4.3 license";
@@ -586,6 +802,17 @@ oberheimHPF(normFreq,Q) = oberheim(normFreq,Q):!,!,_,!;
 //
 // * `normFreq`: normalized frequency (0-1)
 // * `Q`: q
+//
+// #### Test
+// ```
+// ve = library("vaeffects.lib");
+// os = library("oscillators.lib");
+// oberheimLPF_test = os.osc(220)
+//   : ve.oberheimLPF(
+//       hslider("oberheimLPF:normFreq", 0.4, 0, 1, 0.001),
+//       hslider("oberheimLPF:Q", 1.5, 0.5, 10, 0.1)
+//     );
+// ```
 //---------------------------------------------------------------------
 declare oberheimLPF author "Eric Tarr";
 declare oberheimLPF license "MIT-style STK-4.3 license";
@@ -622,22 +849,26 @@ oberheimLPF(normFreq,Q) = oberheim(normFreq,Q):!,!,!,_;
 // For the Faust implementation of this filter, recursion (`letrec`) is used 
 // for storing filter "states". The output (e.g. `y`) is calculated by using 
 // the input signal and the previous states of the filter.
+//
 // During the current recursive step, the states of the filter (e.g. `s`) for 
 // the next step are also calculated.
+//
 // Admittedly, this is not an efficient way to implement a filter because it 
 // requires independently calculating the output and each state during each 
 // recursive step. However, it works as a way to store and use "states"
 // within the constraints of Faust. 
 
 // The simplest example is the 1st-order LPF (shown on the cover of Zavalishin 
-// 2018 and Fig 4.3 of <https://www.willpirkle.com/706-2/>). Here, the input 
-// signal is split in parallel for the calculation of the output signal, `y`, and 
-// the state `s`. The value of the state is only used for feedback to the next 
+// 2018 and Fig 4.3 of <https://www.willpirkle.com/706-2/>).
+//
+// Here, the input signal is split in parallel for the calculation of the output signal, `y`, 
+// and the state `s`. The value of the state is only used for feedback to the next 
 // step of recursion. It is blocked (!) from also being routed to the output. 
+//
 // A trick used for calculating the state `s` is to observe that the input to 
 // the delay block is the sum of two signal: what appears to be a feedforward 
 // path and a feedback path. In reality, the signals being summed are identical 
-// (signal*2) plus the value of the current state.
+// `(signal*2)` plus the value of the current state.
 //
 // #### Usage
 //
@@ -648,7 +879,17 @@ oberheimLPF(normFreq,Q) = oberheim(normFreq,Q):!,!,!,_;
 // Where:
 //
 // * `normFreq`: normalized frequency (0-1)
-
+//
+// #### Test
+// ```
+// ve = library("vaeffects.lib");
+// os = library("oscillators.lib");
+// sallenKeyOnePole_test = os.osc(440)
+//   : ve.sallenKeyOnePole(
+//       hslider("sallenKeyOnePole:normFreq", 0.25, 0, 1, 0.001)
+//     );
+// ```
+//---------------------------------------------------------------------
 declare sallenKeyOnePole author "Eric Tarr";
 declare sallenKeyOnePole license "MIT-style STK-4.3 license";
 sallenKeyOnePole(normFreq) = _<:(s,ylpf,-(ylpf)) : !,_,_
@@ -680,7 +921,17 @@ with{
 // Where:
 //
 // * `normFreq`: normalized frequency (0-1)
-
+//
+// #### Test
+// ```
+// ve = library("vaeffects.lib");
+// os = library("oscillators.lib");
+// sallenKeyOnePoleLPF_test = os.osc(440)
+//   : ve.sallenKeyOnePoleLPF(
+//       hslider("sallenKeyOnePoleLPF:normFreq", 0.25, 0, 1, 0.001)
+//     );
+// ```
+//---------------------------------------------------------------------
 declare sallenKeyOnePoleLPF author "Eric Tarr";
 declare sallenKeyOnePoleLPF license "MIT-style STK-4.3 license";
 sallenKeyOnePoleLPF(normFreq) = sallenKeyOnePole(normFreq) : _,!;
@@ -702,6 +953,16 @@ sallenKeyOnePoleLPF(normFreq) = sallenKeyOnePole(normFreq) : _,!;
 // Where:
 //
 // * `normFreq`: normalized frequency (0-1)
+//
+// #### Test
+// ```
+// ve = library("vaeffects.lib");
+// os = library("oscillators.lib");
+// sallenKeyOnePoleHPF_test = os.osc(440)
+//   : ve.sallenKeyOnePoleHPF(
+//       hslider("sallenKeyOnePoleHPF:normFreq", 0.25, 0, 1, 0.001)
+//     );
+// ```
 //---------------------------------------------------------------------
 declare sallenKeyOnePoleHPF author "Eric Tarr";
 declare sallenKeyOnePoleHPF license "MIT-style STK-4.3 license";
@@ -735,7 +996,18 @@ sallenKeyOnePoleHPF(normFreq) = sallenKeyOnePole(normFreq) : !,_;
 // Where:
 //
 // * `normFreq`: normalized frequency (0-1)
-// * `Q`: q
+// * `Q`: quality factor controlling the sharpness/resonance of the filter around the center frequency (CF). For bandpass filters, higher Q increases the gain at the center frequency. Must be in the range `[ma.EPSILON, ma.MAX]`
+//
+// #### Test
+// ```
+// ve = library("vaeffects.lib");
+// os = library("oscillators.lib");
+// sallenKey2ndOrder_test = os.osc(330)
+//   : ve.sallenKey2ndOrder(
+//       hslider("sallenKey2ndOrder:normFreq", 0.3, 0, 1, 0.001),
+//       hslider("sallenKey2ndOrder:Q", 1.0, 0.1, 10, 0.1)
+//     );
+// ```
 //---------------------------------------------------------------------
 declare sallenKey2ndOrder author "Eric Tarr";
 declare sallenKey2ndOrder license "MIT-style STK-4.3 license";
@@ -774,7 +1046,18 @@ with{
 // Where:
 //
 // * `normFreq`: normalized frequency (0-1)
-// * `Q`: q
+// * `Q`: quality factor controlling the sharpness/resonance of the filter around the center frequency (CF). For bandpass filters, higher Q increases the gain at the center frequency. Must be in the range `[ma.EPSILON, ma.MAX]`
+//
+// #### Test
+// ```
+// ve = library("vaeffects.lib");
+// os = library("oscillators.lib");
+// sallenKey2ndOrderLPF_test = os.osc(330)
+//   : ve.sallenKey2ndOrderLPF(
+//       hslider("sallenKey2ndOrderLPF:normFreq", 0.3, 0, 1, 0.001),
+//       hslider("sallenKey2ndOrderLPF:Q", 0.8, 0.1, 10, 0.1)
+//     );
+// ```
 //---------------------------------------------------------------------
 declare sallenKey2ndOrderLPF author "Eric Tarr";
 declare sallenKey2ndOrderLPF license "MIT-style STK-4.3 license";
@@ -795,7 +1078,18 @@ sallenKey2ndOrderLPF(normFreq,Q) = sallenKey2ndOrder(normFreq,Q) : _,!,!;
 // Where:
 //
 // * `normFreq`: normalized frequency (0-1)
-// * `Q`: q
+// * `Q`: quality factor controlling the sharpness/resonance of the filter around the center frequency (CF). For bandpass filters, higher Q increases the gain at the center frequency. Must be in the range `[ma.EPSILON, ma.MAX]`
+//
+// #### Test
+// ```
+// ve = library("vaeffects.lib");
+// os = library("oscillators.lib");
+// sallenKey2ndOrderBPF_test = os.osc(330)
+//   : ve.sallenKey2ndOrderBPF(
+//       hslider("sallenKey2ndOrderBPF:normFreq", 0.3, 0, 1, 0.001),
+//       hslider("sallenKey2ndOrderBPF:Q", 1.5, 0.1, 10, 0.1)
+//     );
+// ```
 //---------------------------------------------------------------------
 declare sallenKey2ndOrderBPF author "Eric Tarr";
 declare sallenKey2ndOrderBPF license "MIT-style STK-4.3 license";
@@ -816,12 +1110,425 @@ sallenKey2ndOrderBPF(normFreq,Q) = sallenKey2ndOrder(normFreq,Q) : !,_,!;
 // Where:
 //
 // * `normFreq`: normalized frequency (0-1)
-// * `Q`: q
+// * `Q`: quality factor controlling the sharpness/resonance of the filter around the center frequency (CF). For bandpass filters, higher Q increases the gain at the center frequency. Must be in the range `[ma.EPSILON, ma.MAX]`
+//
+// #### Test
+// ```
+// ve = library("vaeffects.lib");
+// os = library("oscillators.lib");
+// sallenKey2ndOrderHPF_test = os.osc(330)
+//   : ve.sallenKey2ndOrderHPF(
+//       hslider("sallenKey2ndOrderHPF:normFreq", 0.3, 0, 1, 0.001),
+//       hslider("sallenKey2ndOrderHPF:Q", 0.8, 0.1, 10, 0.1)
+//     );
+// ```
 //---------------------------------------------------------------------
 declare sallenKey2ndOrderHPF author "Eric Tarr";
 declare sallenKey2ndOrderHPF license "MIT-style STK-4.3 license";
 sallenKey2ndOrderHPF(normFreq,Q) = sallenKey2ndOrder(normFreq,Q) : !,!,_;
 
+//====================Vicanek's Matched (Decramped) Second-Order Filters========
+// Vicanek's Matched (Decramped) Second-Order Filters.
+//
+// This collection implements high-quality, double-precision second-order filters
+// based on the work of Vicanek, offering improved frequency accuracy and dynamic
+// response over traditional biquads—especially near Nyquist.
+//
+// Standard digital filter designs (like bilinear-transformed biquads) suffer from
+// frequency warping, which distorts the placement of poles and zeros. Vicanek's
+// method, detailed in his paper *"Matched Second Order Digital Filters"*, proposes
+// a set of matched filter formulas that eliminate such warping, preserving the
+// intended analog-like behavior and frequency response.
+//
+// The filters provided here include:
+//
+// - `biquad`            — generic difference equation implementation  
+// - `lowpass2Matched`   — second-order lowpass with resonance  
+// - `highpass2Matched`  — second-order highpass with resonance  
+// - `bandpass2Matched`  — second-order bandpass with resonance  
+// - `peaking2Matched`   — second-order peaking EQ
+// - `lowshelf2Matched`  – second-order Butterworth lowshelf
+// - `highshelf2Matched` – second-order Butterworth highshelf
+//
+// Each filter relies on carefully derived coefficient formulas that guarantee
+// accurate placement of the frequency response peak and preserve Q and gain behavior.
+//
+// ⚠️ **Note:** These filters require **double-precision** support.
+//
+// #### References
+//
+// * Vicanek, M. (2016) *Matched Second Order Digital Filters*
+// * <https://www.vicanek.de/articles/BiquadFits.pdf>
+//================================================================================
+
+//----------`(ve.)biquad`-------------------------------------------------------
+// Basic biquad section implementing the difference equation:
+// `y[n] = b0 * x[n] + b1 * x[n-1] + b2 * x[n-2] - a1 * y[n-1] - a2 * y[n-2]`
+//
+// #### Usage:
+// ```
+// _ : biquad(b0, b1, b2, a1, a2) : _
+// ```
+//
+// Where:
+//
+// * `b0`: feedforward coefficient for `x[n]`
+// * `b1`: feedforward coefficient for `x[n-1]`
+// * `b2`: feedforward coefficient for `x[n-2]`
+// * `a1`: feedback coefficient for `y[n-1]`
+// * `a2`: feedback coefficient for `y[n-2]`
+//
+// #### Test
+// ```
+// ve = library("vaeffects.lib");
+// os = library("oscillators.lib");
+// biquad_test = os.osc(440)
+//   : ve.biquad(0.5, 0.3, 0.2, -0.3, 0.2);
+// ```
+//---------------------------------------------------------------------
+declare biquad author "Dario Sanfilippo";
+declare biquad license "MIT License";
+biquad(b0, b1, b2, a1, a2, x) = f ~ _
+    with {
+        f(s) = b0 * x + b1 * x' + b2 * x'' - a1 * s - a2 * s';
+    };
+
+//----------`(ve.)lowpass2Matched`----------------------------------------------
+// Vicanek's decramped second-order resonant lowpass filter.
+//
+// ⚠️ **Note:** These filters require **double-precision** support.
+//
+// #### Usage:
+// ```
+// _ : lowpass2Matched(CF, Q) : _
+// ```
+//
+// Where:
+//
+// * `CF`: cutoff frequency in Hz
+// * `Q`: resonance linear amplitude
+//
+// #### Test
+// ```
+// ve = library("vaeffects.lib");
+// os = library("oscillators.lib");
+// lowpass2Matched_test = os.osc(440)
+//   : ve.lowpass2Matched(
+//       hslider("lowpass2Matched:CF", 1000, 50, 5000, 1),
+//       hslider("lowpass2Matched:Q", 0.707, 0.1, 5, 0.01)
+//     );
+// ```
+//---------------------------------------------------------------------
+declare lowpass2Matched author "Dario Sanfilippo";
+declare lowpass2Matched license "MIT License";
+lowpass2Matched(CF, Q, x) = biquad(b0, b1, b2, a1, a2, x)
+    with {
+        q = 1.0 / (2.0 * Q);
+        w = 2.0 * ma.PI * CF * ma.T;
+        a1Less = -2.0 * exp(-1.0 * q * w) * cos(sqrt(max(.0, 1.0 - q * q)) * w);
+        a1More = -2.0 * exp(-1.0 * q * w) * ma.cosh(sqrt(max(.0, q * q - 1.0)) * w);
+        a1 = ba.if(q <= 1.0, a1Less, a1More);
+        a2 = exp(-2.0 * q * w);
+        phi0 = 1.0 - sin(.5 * w) ^ 2.0;
+        phi1 = sin(.5 * w) ^ 2.0;
+        phi2 = 4.0 * phi0 * phi1;
+        A0 = (1.0 + a1 + a2) ^ 2.0;
+        A1 = (1.0 - a1 + a2) ^ 2.0;
+        A2 = -4.0 * a2;
+        R1 = (A0 * phi0 + A1 * phi1 + A2 * phi2) * Q * Q;
+        B0 = A0;
+        B1 = (R1 - B0 * phi0) / phi1;
+        b0 = .5 * (sqrt(B0) + sqrt(B1));
+        b1 = sqrt(B0) - b0;
+        b2 = .0;
+    };
+
+//----------`(ve.)highpass2Matched`----------------------------------------------
+// Vicanek's decramped second-order resonant highpass filter.
+//
+// ⚠️ **Note:** These filters require **double-precision** support.
+//
+// #### Usage:
+// ```
+// _ : highpass2Matched(CF, Q) : _
+// ```
+//
+// Where:
+//
+// * `CF`: cutoff frequency in Hz
+// * `Q`: resonance linear amplitude
+//
+// #### Test
+// ```
+// ve = library("vaeffects.lib");
+// os = library("oscillators.lib");
+// highpass2Matched_test = os.osc(440)
+//   : ve.highpass2Matched(
+//       hslider("highpass2Matched:CF", 500, 50, 5000, 1),
+//       hslider("highpass2Matched:Q", 0.707, 0.1, 5, 0.01)
+//     );
+// ```
+//---------------------------------------------------------------------
+declare highpass2Matched author "Dario Sanfilippo";
+declare highpass2Matched license "MIT License";
+highpass2Matched(CF, Q, x) = biquad(b0, b1, b2, a1, a2, x)
+    with {
+        q = 1.0 / (2.0 * Q);
+        w = 2.0 * ma.PI * CF * ma.T;
+        a1Less = -2.0 * exp(-1.0 * q * w) * cos(sqrt(max(.0, 1.0 - q * q)) * w);
+        a1More = -2.0 * exp(-1.0 * q * w) * ma.cosh(sqrt(max(.0, q * q - 1.0)) * w);
+        a1 = ba.if(q <= 1.0, a1Less, a1More);
+        a2 = exp(-2.0 * q * w);
+        phi0 = 1.0 - sin(.5 * w) ^ 2.0;
+        phi1 = sin(.5 * w) ^ 2.0;
+        phi2 = 4.0 * phi0 * phi1;
+        A0 = (1.0 + a1 + a2) ^ 2.0;
+        A1 = (1.0 - a1 + a2) ^ 2.0;
+        A2 = -4.0 * a2;
+        b0 = Q * sqrt(A0 * phi0 + A1 * phi1 + A2 * phi2) / (4.0 * phi1);
+        b1 = -2.0 * b0;
+        b2 = b0;
+    };
+
+//----------`(ve.)bandpass2Matched`----------------------------------------------
+// Vicanek's decramped second-order resonant bandpass filter.
+//
+// ⚠️ **Note:** These filters require **double-precision** support.
+//
+// #### Usage:
+// ```
+// _ : bandpass2Matched(CF, Q) : _
+// ```
+//
+// Where:
+//
+// * `CF`: cutoff frequency in Hz
+// * `Q`: peak width
+//
+// #### Test
+// ```
+// ve = library("vaeffects.lib");
+// os = library("oscillators.lib");
+// bandpass2Matched_test = os.osc(440)
+//   : ve.bandpass2Matched(
+//       hslider("bandpass2Matched:CF", 1200, 50, 5000, 1),
+//       hslider("bandpass2Matched:Q", 2.0, 0.1, 10, 0.01)
+//     );
+// ```
+//---------------------------------------------------------------------
+declare bandpass2Matched author "Dario Sanfilippo";
+declare bandpass2Matched license "MIT License";
+bandpass2Matched(CF, Q, x) = biquad(b0, b1, b2, a1, a2, x)
+    with {
+        q = 1.0 / (2.0 * Q);
+        w = 2.0 * ma.PI * CF * ma.T;
+        a1Less = -2.0 * exp(-1.0 * q * w) * cos(sqrt(max(.0, 1.0 - q * q)) * w);
+        a1More = -2.0 * exp(-1.0 * q * w) * ma.cosh(sqrt(max(.0, q * q - 1.0)) * w);
+        a1 = ba.if(q <= 1.0, a1Less, a1More);
+        a2 = exp(-2.0 * q * w);
+        phi0 = 1.0 - sin(.5 * w) ^ 2.0;
+        phi1 = sin(.5 * w) ^ 2.0;
+        phi2 = 4.0 * phi0 * phi1;
+        A0 = (1.0 + a1 + a2) ^ 2.0;
+        A1 = (1.0 - a1 + a2) ^ 2.0;
+        A2 = -4.0 * a2;
+        R1 = A0 * phi0 + A1 * phi1 + A2 * phi2;
+        R2 = -1.0 * A0 + A1 + 4.0 * (phi0 - phi1) * A2;
+        B1 = R2 + 4.0 * (phi1 - phi0) * B2;
+        B2 = (R1 - R2 * phi1) / (4.0 * phi1 * phi1);
+        b0 = .5 * (sqrt(B2 + b1 * b1) - b1);
+        b1 = -.5 * sqrt(B1);
+        b2 = -1.0 * (b0 + b1);
+    };
+
+//----------`(ve.)peaking2Matched`----------------------------------------------
+// Vicanek's decramped second-order resonant bandpass filter.
+//
+// ⚠️ **Note:** These filters require **double-precision** support.
+//
+// #### Usage:
+// ```
+// _ : peaking2Matched(G, CF, Q) : _
+// ```
+//
+// Where:
+//
+// * `G`: peak linear amplitude
+// * `CF`: cutoff frequency in Hz
+// * `Q`: peak width
+//
+// #### Test
+// ```
+// ve = library("vaeffects.lib");
+// os = library("oscillators.lib");
+// peaking2Matched_test = os.osc(440)
+//   : ve.peaking2Matched(
+//       hslider("peaking2Matched:G", 1.5, 0.1, 4, 0.01),
+//       hslider("peaking2Matched:CF", 1000, 50, 5000, 1),
+//       hslider("peaking2Matched:Q", 2.0, 0.1, 10, 0.01)
+//     );
+// ```
+//---------------------------------------------------------------------
+declare peaking2Matched author "Dario Sanfilippo";
+declare peaking2Matched license "MIT License";
+peaking2Matched(G, CF, Q, x) = biquad(b0, b1, b2, a1, a2, x)
+    with {
+        q = 1.0 / (2.0 * Q);
+        w = 2.0 * ma.PI * CF * ma.T;
+        a1Less = -2.0 * exp(-1.0 * q * w) * cos(sqrt(max(.0, 1.0 - q * q)) * w);
+        a1More = -2.0 * exp(-1.0 * q * w) * ma.cosh(sqrt(max(.0, q * q - 1.0)) * w);
+        a1 = ba.if(q <= 1.0, a1Less, a1More);
+        a2 = exp(-2.0 * q * w);
+        phi0 = 1.0 - sin(.5 * w) ^ 2.0;
+        phi1 = sin(.5 * w) ^ 2.0;
+        phi2 = 4.0 * phi0 * phi1;
+        A0 = (1.0 + a1 + a2) ^ 2.0;
+        A1 = (1.0 - a1 + a2) ^ 2.0;
+        A2 = -4.0 * a2;
+        B0 = A0;
+        R1 = (A0 * phi0 + A1 * phi1 + A2 * phi2) * G * G;
+        R2 = (-1.0 * A0 + A1 + 4.0 * (phi0 - phi1) * A2) * G * G;
+        B1 = R2 + B0 + 4.0 * (phi1 - phi0) * B2;
+        B2 = (R1 - R2 * phi1 - B0) / (4.0 * phi1 * phi1);
+        W = .5 * (sqrt(B0) + sqrt(B1));
+        b0 = .5 * (W + sqrt(W * W + B2));
+        b1 = .5 * (sqrt(B0) - sqrt(B1));
+        b2 = (-1.0 * B2) / (4.0 * b0);
+    };
+
+//----------`(ve.)lowshelf2Matched`---------------------------------------------
+// Vicanek's decramped second-order Butterworth lowshelf filter.
+//
+// ⚠️ **Note:** These filters require **double-precision** support.
+//
+// #### Usage:
+// ```
+// _ : lowshelf2Matched(G, CF) : _
+// ```
+//
+// Where:
+//
+// * `G`: shelf linear amplitude
+// * `CF`: cutoff frequency in Hz
+//
+// #### Test
+// ```
+// ve = library("vaeffects.lib");
+// os = library("oscillators.lib");
+// lowshelf2Matched_test = os.osc(330)
+//   : ve.lowshelf2Matched(
+//       hslider("lowshelf2Matched:G", 1.5, 0.5, 4, 0.01),
+//       hslider("lowshelf2Matched:CF", 500, 50, 5000, 1)
+//     );
+// ```
+//---------------------------------------------------------------------
+declare lowshelf2Matched author "Dario Sanfilippo";
+declare lowshelf2Matched license "MIT License";
+lowshelf2Matched(G, CF, x) =  biquad(b0, b1, b2, a1, a2, x)
+    with {
+        safeG = ba.if(G < 1.0, min(1.0 - ma.EPSILON, G), max(1.0 + ma.EPSILON, G));
+        g = 1.0 / safeG;
+        halfPi = ma.PI * .5;
+        f = CF / (ma.SR * .5);
+        f4 = f ^ 4.0;
+        hny = (f4 + g) / (f4 + safeG);
+        f1 = f / sqrt(.160 + 1.543 * f * f);
+        f14 = f1 ^ 4.0;
+        h1 = (f4 + f14 * g) / (f4 + f14 * safeG);
+        phi1 = sin(halfPi * f1) ^ 2.0;
+        f2 = f / sqrt(.947 + 3.806 * f * f);
+        f24 = f2 ^ 4.0;
+        h2 = (f4 + f24 * g) / (f4 + f24 * safeG);
+        phi2 = sin(halfPi * f2) ^ 2.0;
+        d1 = (h1 - 1.0) * (1.0 - phi1);
+        c11 = -1.0 * phi1 * d1;
+        c12 = phi1 * phi1 * (hny - h1);
+        d2 = (h2 - 1.0) * (1.0 - phi2);
+        c21 = -1.0 * phi2 * d2;
+        c22 = phi2 * phi2 * (hny - h2);
+        alpha1 = (c22 * d1 - c12 * d2) / (c11 * c22 - c12 * c21);
+        aa1 = (d1 - c11 * alpha1) / c12;
+        bb1 = hny * aa1;
+        aa2 = .25 * (alpha1 - aa1);
+        bb2 = .25 * (alpha1 - bb1);
+        v = .5 * (1.0 + sqrt(aa1));
+        w = .5 * (1.0 + sqrt(bb1));
+        a0 = .5 * (v + sqrt(v * v + aa2));
+        a0Inv = 1.0 / a0;
+        a1 = (1.0 - v) * a0Inv;
+        a2 = -.25 * aa2 * a0Inv * a0Inv;
+        b0Temp = .5 * (w + sqrt(w * w + bb2)) * a0Inv;
+        b1 = safeG * (1.0 - w) * a0Inv;
+        b2 = safeG * (-.25 * bb2 / b0Temp) * a0Inv * a0Inv;
+        b0 = safeG * b0Temp;
+    };
+
+//----------`(ve.)highshelf2Matched`--------------------------------------------
+// Vicanek's decramped second-order Butterworth highshelf filter.
+//
+// ⚠️ **Note:** These filters require **double-precision** support.
+//
+// #### Usage:
+// ```
+// _ : highshelf2Matched(G, CF) : _
+// ```
+//
+// Where:
+//
+// * `G`: shelf linear amplitude
+// * `CF`: cutoff frequency in Hz
+//
+// #### Test
+// ```
+// ve = library("vaeffects.lib");
+// os = library("oscillators.lib");
+// highshelf2Matched_test = os.osc(330)
+//   : ve.highshelf2Matched(
+//       hslider("highshelf2Matched:G", 1.5, 0.5, 4, 0.01),
+//       hslider("highshelf2Matched:CF", 1500, 50, 10000, 1)
+//     );
+// ```
+//---------------------------------------------------------------------
+declare highshelf2Matched author "Dario Sanfilippo";
+declare highshelf2Matched license "MIT License";
+highshelf2Matched(G, CF, x) =  biquad(b0, b1, b2, a1, a2, x)
+    with {
+        safeG = ba.if(G < 1.0, min(1.0 - ma.EPSILON, G), max(1.0 + ma.EPSILON, G));
+        g = safeG;
+        gInv = 1.0 / g;
+        halfPi = ma.PI * .5;
+        f = CF / (ma.SR * .5);
+        f4 = f ^ 4.0;
+        hny = (f4 + g) / (f4 + gInv);
+        f1 = f / sqrt(.160 + 1.543 * f * f);
+        f14 = f1 ^ 4.0;
+        h1 = (f4 + f14 * g) / (f4 + f14 * gInv);
+        phi1 = sin(halfPi * f1) ^ 2.0;
+        f2 = f / sqrt(.947 + 3.806 * f * f);
+        f24 = f2 ^ 4.0;
+        h2 = (f4 + f24 * g) / (f4 + f24 * gInv);
+        phi2 = sin(halfPi * f2) ^ 2.0;
+        d1 = (h1 - 1.0) * (1.0 - phi1);
+        c11 = -1.0 * phi1 * d1;
+        c12 = phi1 * phi1 * (hny - h1);
+        d2 = (h2 - 1.0) * (1.0 - phi2);
+        c21 = -1.0 * phi2 * d2;
+        c22 = phi2 * phi2 * (hny - h2);
+        alpha1 = (c22 * d1 - c12 * d2) / (c11 * c22 - c12 * c21);
+        aa1 = (d1 - c11 * alpha1) / c12;
+        bb1 = hny * aa1;
+        aa2 = .25 * (alpha1 - aa1);
+        bb2 = .25 * (alpha1 - bb1);
+        v = .5 * (1.0 + sqrt(aa1));
+        w = .5 * (1.0 + sqrt(bb1));
+        a0 = .5 * (v + sqrt(v * v + aa2));
+        a0Inv = 1.0 / a0;
+        a1 = (1.0 - v) * a0Inv;
+        a2 = -.25 * aa2 * a0Inv * a0Inv;
+        b0 = .5 * (w + sqrt(w * w + bb2)) * a0Inv;
+        b1 = (1.0 - w) * a0Inv;
+        b2 = (-.25 * bb2 / b0) * a0Inv * a0Inv;
+    };
 
 //=========================================Effects========================================
 //========================================================================================
@@ -840,9 +1547,19 @@ sallenKey2ndOrderHPF(normFreq,Q) = sallenKey2ndOrder(normFreq,Q) : !,!,_;
 //
 // * `fr`: resonance frequency in Hz
 //
-// #### Reference
+// #### Test
+// ```
+// ve = library("vaeffects.lib");
+// os = library("oscillators.lib");
+// wah4_test = os.osc(220)
+//   : ve.wah4(
+//       hslider("wah4:freq", 800, 200, 2000, 1)
+//     );
+// ```
 //
-// <https://ccrma.stanford.edu/~jos/pasp/vegf.html>
+// #### References
+//
+// * <https://ccrma.stanford.edu/~jos/pasp/vegf.html>
 //------------------------------------------------------------
 wah4(fr) = 4*moog_vcf((3.2/4),fr:si.smooth(0.999));
 
@@ -859,6 +1576,16 @@ wah4(fr) = 4*moog_vcf((3.2/4),fr:si.smooth(0.999));
 // Where:
 //
 // * `level`: amount of effect desired (0 to 1).
+//
+// #### Test
+// ```
+// ve = library("vaeffects.lib");
+// os = library("oscillators.lib");
+// autowah_test = os.osc(220)
+//   : ve.autowah(
+//       hslider("autowah:level", 0.7, 0, 1, 0.01)
+//     );
+// ```
 //------------------------------------------------------------
 autowah(level,x) = level * crybaby(an.amp_follower(0.1,x),x) + (1.0-level)*x;
 
@@ -876,9 +1603,19 @@ autowah(level,x) = level * crybaby(an.amp_follower(0.1,x),x) + (1.0-level)*x;
 //
 // * `wah`: "pedal angle" from 0 to 1
 //
-// #### Reference
+// #### Test
+// ```
+// ve = library("vaeffects.lib");
+// os = library("oscillators.lib");
+// crybaby_test = os.osc(220)
+//   : ve.crybaby(
+//       hslider("crybaby:wah", 0.3, 0, 1, 0.01)
+//     );
+// ```
 //
-// <https://ccrma.stanford.edu/~jos/pasp/vegf.html>
+// #### References
+//
+// * <https://ccrma.stanford.edu/~jos/pasp/vegf.html>
 //------------------------------------------------------------
 crybaby(wah) = *(gs) : fi.tf2(1,-1,0,a1s,a2s)
 with {
@@ -958,6 +1695,20 @@ closed source license or any other license if you decide so.
 // * `BWRatio`: Coefficient to adjust the bandwidth of each band (0.1 - 2)
 // * `source`: Modulation signal
 // * `excitation`: Excitation/Carrier signal
+//
+// #### Test
+// ```
+// ve = library("vaeffects.lib");
+// no = library("noises.lib");
+// os = library("oscillators.lib");
+// vocoder_test = (no.noise, os.osc(220))
+//   : ve.vocoder(
+//       8,
+//       hslider("vocoder:att", 0.01, 0.001, 0.1, 0.001),
+//       hslider("vocoder:rel", 0.1, 0.01, 0.5, 0.01),
+//       hslider("vocoder:BWRatio", 1.0, 0.5, 1.5, 0.01)
+//     );
+// ```
 //------------------------------------------------------------
 declare oneVocoderBand author "Romain Michon";
 oneVocoderBand(band,bandsNumb,bwRatio,bandGain,x) = x : fi.resonbp(bandFreq,bandQ,bandGain) with {
@@ -967,7 +1718,7 @@ oneVocoderBand(band,bandsNumb,bwRatio,bandGain,x) = x : fi.resonbp(bandFreq,band
 };
 
 vocoder(nBands,att,rel,BWRatio,source,excitation) = source <: par(i,nBands,oneVocoderBand(i,nBands,BWRatio,1) :
-	an.amp_follower_ar(att,rel) : _,excitation : oneVocoderBand(i,nBands,BWRatio)) :> _ ;
+    an.amp_follower_ar(att,rel) : _,excitation : oneVocoderBand(i,nBands,BWRatio)) :> _ ;
 
 //########################################################################################
 /************************************************************************
@@ -982,3 +1733,446 @@ released under LGPL, STK-4.3, MIT, BSD, or a similar FOSS license.
 ************************************************************************/
 
 // end further further contributions section
+
+
+//-----------------------`(ve.)klonCentaur`---------------------------
+// Klon Centaur overdrive pedal circuit model.
+//
+// The Klon Centaur is a guitar overdrive pedal known for adding gain and
+// harmonic distortion while preserving the instrument's natural tone. This
+// implementation uses wave digital filter (WDF) techniques to model the
+// analog circuitry, including the gain stage, tone control, and clipping.
+//
+// #### Usage
+//
+// ```
+// _ : klonCentaur(gain, treble, level) : _
+// ```
+//
+// Where:
+//
+// * `gain`: Gain control (0-1), where 0 is minimum gain and 1 is maximum gain.
+//   Controls the resistance of the gain potentiometer (R10b) in the preamp stage,
+//   ranging from 2kΩ at maximum gain to 102kΩ at minimum gain.
+// * `treble`: Treble/tone control (0-1), where 0 is dark/warm tone and 1 is bright tone.
+//   Controls the frequency response of the active tone shaping filter.
+// * `level`: Output level/volume control (0-1), where 0 is minimum output and 1 is maximum output.
+//   Controls the output potentiometer resistance, setting the final output amplitude.
+//
+// #### Test
+// ```
+// ve = library("vaeffects.lib");
+// os = library("oscillators.lib");
+// klonCentaur_test = os.osc(330)
+//    : ve.klonCentaur(
+//        hslider("klonCentaur:gain", 0.5, 0, 1, 0.01),
+//        hslider("klonCentaur:treble", 0.5, 0, 1, 0.01),
+//        hslider("klonCentaur:level", 0.5, 0, 1, 0.01)
+//      );
+// ```
+//
+// #### References
+//
+// * J. Chowdhury, "chowdsp_wdf: An Advanced C++ Library for Wave Digital Circuit
+//   Modelling," arXiv:2210.12554, 2022
+// * <https://github.com/jatinchowdhury18/KlonCentaur/tree/master/ChowCentaur>
+//------------------------------------------------------------
+/*
+Implementation Notes:
+
+This is a port from Jatin Chowdhury's ChowCentaur C++ implementation, which
+uses wave digital filters (WDF) to model the analog circuitry.
+
+Circuit Modeling Approach:
+- Input buffer: High-pass filter (R1=10kΩ, R2=1MΩ, C1=0.1µF)
+- Gain stage: WDF-modeled preamp, feed-forward paths, amplifier, and diode clipper
+- Tone control: Active filter with variable frequency response (Rpot=10kΩ, C=3.9nF)
+- Output stage: Level control with passive filter (Rpot=10kΩ, C1=4.7µF)
+- DC blocker: 35 Hz high-pass filter (Q=0.707)
+
+Technical Details:
+- Uses Wright Omega function for antiparallel diode modeling (more accurate than Lambert W)
+- Implements JUCE-style parameter smoothing (linear for treble, multiplicative for gain/level)
+- Outputs current from clipping stage capacitor C10
+
+Parameter Differences from Original ChowCentaur Source:
+The following parameters differ from the ChowCentaur source but empirically improve VST correlation:
+- Diode saturation current (Is): 2.52e-9 A (vs 15e-6 A in ChowCentaur)
+  Value taken from chowdsp WDF test files for better accuracy
+- Input scaling: No 0.5x scaling applied (ChowCentaur applies this but omitting improves correlation)
+- Oversampling: None in clipping stage (ChowCentaur uses 2x oversampling)
+- Output gain: Applies factor 0.262 to empirically match ChowCentaur
+
+Note: The root cause of these discrepancies may be related to differences in the WDF
+library implementations or measurement methodology used for parameter extraction.
+*/
+klonCentaur(gain, treble, level) =
+    input_buffer          // High-pass input coupling
+    : saturate_input      // Prevent excessive input levels
+    : gain_stage(gain)    // Preamp, feed-forward, amplifier, and clipping
+    : tone_filter(treble) // Active tone control
+    : *(-1.0)             // Phase inversion (circuit artifact)
+    : saturate_core       // Core saturation limiting
+    : output_stage(level) // Level control and output coupling
+    : dc_blocker_hp35     // Remove DC offset
+    : *(0.262)            // Output gain correction (empirically matched to ChowCentaur VST)
+with {
+    SR = ma.SR;
+
+    // Utility functions
+    clip(l, h, x) = max(l, min(h, x));  // Hard clipping limiter
+    saturate_input = clip(-4.5, 4.5);   // Input stage saturation (±4.5 V)
+    saturate_core = clip(-13.1, 11.7);  // Core stage saturation (asymmetric)
+
+    // JUCE-style Parameter Smoothing
+    // Linear smoothing for parameters with additive behavior (e.g., treble)
+    smoothed_linear(time, target) = target : ba.line(n)
+    with {
+        n = ba.sec2samp(time);  // Convert time (seconds) to samples
+    };
+
+    // Multiplicative smoothing for parameters with scaling behavior (e.g., gain, level)
+    // Smooths in log domain to provide perceptually linear response
+    smoothed_multiplicative(time, min_val, target) = exp(log_smooth)
+    with {
+        safe_target = max(target, min_val);  // Prevent log(0)
+        log_smooth = log(safe_target) : ba.line(n);
+        n = ba.sec2samp(time);
+    };
+
+    // ============= Stage Implementations =============
+
+    // Input Buffer Stage
+    // High-pass filter formed by input coupling network
+    // Rejects DC and very low frequencies while passing guitar signal
+    // Reference: ChowCentaur/CommonProcessors/InputBufferProcessor.cpp
+    input_buffer = fi.tf1(b0_in, b1_in, a1_in)
+    with {
+        R1 = 10000.0;    // 10 kΩ - Series input resistor
+        R2 = 1000000.0;  // 1 MΩ - Bias resistor to ground
+        C1 = 0.1e-6;     // 0.1 µF - Input coupling capacitor
+        K = 2.0 * SR;    // Bilinear transform frequency warping factor
+
+        // Analog prototype transfer function H(s) = (bs0*s + bs1) / (as0*s + as1)
+        as0 = C1 * (R1 + R2);
+        as1 = 1.0;
+        bs0 = C1 * R2;
+        bs1 = 0.0;
+
+        // Bilinear transform: s = K*(z-1)/(z+1)
+        a0 = as0 * K + as1;
+        b0_in = (bs0 * K + bs1) / a0;
+        b1_in = (-bs0 * K + bs1) / a0;
+        a1_in = (-as0 * K + as1) / a0;
+    };
+
+    // Tone Control Stage
+    // Active tone filter with variable frequency response
+    // Treble control adjusts the balance between bass and treble frequencies
+    // Reference: ChowCentaur/CommonProcessors/ToneFilterProcessor.cpp
+    tone_filter(treble_val) = fi.tf1(b0_tone, b1_tone, a1_tone)
+    with {
+        Rpot = 10e3;         // 10 kΩ - Treble potentiometer
+        C = 3.9e-9;          // 3.9 nF - Tone shaping capacitor
+        G1 = 1.0 / 100e3;    // Conductance: 100 kΩ resistor
+        treble_s = treble_val
+            : clip(0.0, 1.0)
+            : smoothed_linear(0.05);  // 50 ms smoothing time
+        G2 = 1.0 / (1800.0 + (1.0 - treble_s) * Rpot);  // 1.8 kΩ + variable
+        G3 = 1.0 / (4700.0 + treble_s * Rpot);          // 4.7 kΩ + variable
+        G4 = 1.0 / 100e3;    // Conductance: 100 kΩ resistor
+
+        // Frequency warping to match critical transition frequency
+        wc = G1 / C;
+        K = wc / tan(wc / (2.0 * SR));
+
+        // Analog prototype coefficients
+        bs0 = C * (G1 + G2);
+        bs1 = G1 * (G2 + G3);
+        as0 = C * (G3 - G4);
+        as1 = -G4 * (G2 + G3);
+
+        // Bilinear transform
+        a0_temp = as0 * K + as1;
+        b0_temp = (bs0 * K + bs1) / a0_temp;
+        b1_temp = (-bs0 * K + bs1) / a0_temp;
+        a1_temp = (-as0 * K + as1) / a0_temp;
+
+        // Pole flip to ensure stability (keep pole inside unit circle)
+        a1_tone = 1.0 / a1_temp;
+        b0_tone = b0_temp / a1_temp;
+        b1_tone = b1_temp / a1_temp;
+    };
+
+    // Output Stage
+    // Level control with passive RC filter
+    // Controls final output amplitude via variable voltage divider
+    // Reference: ChowCentaur/CommonProcessors/OutputStageProcessor.cpp
+    output_stage(level_val) = fi.tf1(b0_out, b1_out, a1_out)
+    with {
+        level_s = level_val
+            : clip(0.00001, 1.0)
+            : smoothed_multiplicative(0.05, 0.00001);  // 50 ms smoothing time
+        R1 = 560.0 + (1.0 - level_s) * 10000.0;  // 560 Ω + variable (top of pot)
+        R2 = level_s * 10000.0 + 1.0;            // Variable (bottom of pot) + 1 Ω floor
+        C1 = 4.7e-6;                             // 4.7 µF - Output coupling capacitor
+        K = 2.0 * SR;                            // Bilinear transform frequency factor
+
+        // Analog prototype transfer function
+        as0 = C1 * (R1 + R2);
+        as1 = 1.0;
+        bs0 = C1 * R2;
+        bs1 = 0.0;
+
+        // Bilinear transform
+        a0 = as0 * K + as1;
+        b0_out = (bs0 * K + bs1) / a0;
+        b1_out = (-bs0 * K + bs1) / a0;
+        a1_out = (-as0 * K + as1) / a0;
+    };
+
+    // Calculate pole frequency for frequency-warped bilinear transform
+    // Used to match the critical frequency in 2nd-order systems
+    // Returns imaginary part of complex pole pair: Im(pole) = sqrt(-discriminant) / (2*a0)
+    calcPoleFreq(as0, as1, as2) = sqrt(-radicand) / (2.0 * as0)
+    with {
+        radicand = as1 * as1 - 4.0 * as0 * as2 : min(0.);  // Force non-positive for complex poles
+    };
+
+    // Amplifier Stage
+    // Second-order filter modeling the op-amp gain stage before clipping
+    // Gain control adjusts feedback network impedance
+    // Reference: ChowCentaur/TeensyCentaur/src/GainStageProcessors/AmpStage.h
+    amp_stage(gain_val, sig) = sig : fi.tf2(b0_amp, b1_amp, b2_amp, a1_amp, a2_amp)
+    with {
+        // R10b: Gain potentiometer (100 kΩ)
+        // Maps gain parameter [0,1] to resistance [102 kΩ, 2 kΩ]
+        // At minimum gain (0): maximum resistance (102 kΩ) for less feedback
+        // At maximum gain (1): minimum resistance (2 kΩ) for more feedback
+        r10b = gain_val
+            : clip(0, 1)
+            : it.remap(0, 1, 102000.0, 2000.0)
+            : smoothed_multiplicative(0.05, 2000.0);  // 50 ms smoothing time
+        R11 = 15000.0;   // 15 kΩ - Feedback network resistor
+        R12 = 422000.0;  // 422 kΩ - Feedback network resistor
+        C7 = 82e-9;      // 82 nF - Feedback network capacitor
+        C8 = 390e-12;    // 390 pF - Feedback network capacitor
+
+        // Analog prototype coefficients for 2nd-order system
+        as0 = C7 * C8 * r10b * R11 * R12;
+        as1 = C7 * r10b * R11 + C8 * R12 * (r10b + R11);
+        as2 = r10b + R11;
+        bs0 = as0;
+        bs1 = C7 * R11 * R12 + as1;
+        bs2 = R12 + as2;
+
+        // Frequency-warped bilinear transform to preserve critical frequency
+        wc = calcPoleFreq(as0, as1, as2);
+        K = wc_safe / tan(wc_safe / (2.0 * SR))
+        with {
+            wc_safe = max(wc, 1e-10);  // Prevent division by zero
+        };
+        K2 = K * K;
+
+        // Bilinear transform with frequency warping
+        a0 = as0 * K2 + as1 * K + as2;
+        b0_amp = (bs0 * K2 + bs1 * K + bs2) / a0;
+        b1_amp = 2.0 * (bs2 - bs0 * K2) / a0;
+        b2_amp = (bs0 * K2 - bs1 * K + bs2) / a0;
+        a1_amp = 2.0 * (as2 - as0 * K2) / a0;
+        a2_amp = (as0 * K2 - as1 * K + as2) / a0;
+    };
+
+    // Summing Amplifier
+    // First-order filter that sums the feed-forward currents
+    // Models the inverting summing amplifier in the gain stage
+    // Reference: ChowCentaur/TeensyCentaur/src/GainStageProcessors/SummingAmp.h
+    summing_amp = fi.tf1(b0_sum, b1_sum, a1_sum)
+    with {
+        R20 = 392000.0;  // 392 kΩ - Summing junction resistor
+        C13 = 820e-12;   // 820 pF - Feedback capacitor
+        K = 2.0 * SR;    // Bilinear transform frequency factor
+
+        // Analog prototype coefficients
+        as0 = C13 * R20;
+        as1 = 1.0;
+        bs0 = 0.0;
+        bs1 = R20;
+
+        // Bilinear transform
+        a0 = as0 * K + as1;
+        b0_sum = (bs0 * K + bs1) / a0;
+        b1_sum = (-bs0 * K + bs1) / a0;
+        a1_sum = (-as0 * K + as1) / a0;
+    };
+
+    // DC Blocker
+    // 35 Hz high-pass filter (Butterworth, Q=0.707)
+    // Removes any DC offset accumulated through the gain stage
+    // Reference: ChowCentaur/ChowCentaurPlugin.cpp (line 66)
+    dc_blocker_hp35 = fi.tf2(b0_dc, b1_dc, b2_dc, a1_dc, a2_dc)
+    with {
+        freq = 35.0;         // Cutoff frequency (Hz)
+        invQ = sqrt(2.0);    // Inverse Q-factor (1/Q = sqrt(2) for Butterworth)
+        n = tan(ma.PI * freq / SR);
+        n2 = n * n;
+        c1 = 1.0 / (1.0 + invQ * n + n2);
+
+        // High-pass filter coefficients
+        b0_dc = c1;
+        b1_dc = -2.0 * c1;
+        b2_dc = c1;
+        a1_dc = 2.0 * c1 * (n2 - 1.0);
+        a2_dc = c1 * (1.0 - invQ * n + n2);
+    };
+
+    // Preamp Stage (Wave Digital Filter)
+    // Models the input preamp circuit using WDF topology
+    // Outputs: (voltage at gain node, feed-forward 1 current)
+    // WDF topology: vin-[C3]-(parallel: (series: (parallel: (C5, R6), Vbias)),
+    //                                   (series: (parallel: (Vbias2, C16), R7)))
+    // Reference: ChowCentaur/TeensyCentaur/src/GainStageProcessors/PreAmpStage.h
+    preamp_stage(gain_val, sig) = wd.buildtree(tree) : combine_outputs
+    with {
+        // Vbias resistance varies with gain (0-100 kΩ)
+        vb_res = max(gain_val * 100e3, 1.0e-9);  // Floor at ~0 Ω to avoid singularity
+
+        // WDF components
+        vin(i) = wd.u_voltage(i, -1.0 * sig);      // Input voltage source (inverted)
+        c3(i) = wd.capacitor(i, 0.1e-6);           // 0.1 µF - Input coupling capacitor
+        c5(i) = wd.capacitor(i, 68e-9);            // 68 nF - Preamp capacitor
+        c16(i) = wd.capacitor(i, 1e-6);            // 1 µF - Bypass capacitor
+        r6(i) = wd.resistor_Vout(i, 10000.0);      // 10 kΩ - Output resistor (voltage output)
+        r7(i) = wd.resistor(i, 1500.0);            // 1.5 kΩ - Bias resistor
+        vbias(i) = wd.resVoltage_Vout(i, vb_res, 0.0);  // Variable bias (voltage output)
+        vbias2(i) = wd.resistor_Iout(i, 15000.0);  // 15 kΩ - Bias resistor (current output)
+
+        // Build WDF tree structure matching circuit topology
+        tree = vin : wd.series : (
+            c3,
+            (wd.parallel : (
+                (wd.series : ((wd.parallel : (c5, r6)), vbias)),
+                (wd.series : ((wd.parallel : (vbias2, c16)), r7))
+            ))
+        );
+
+        // Combine voltage and current outputs
+        // v_r6 + v_vbias = voltage at gain node
+        // i_ff1 = feed-forward path 1 current
+        combine_outputs(v_r6, v_vbias, i_ff1) = v_r6 + v_vbias, i_ff1;
+    };
+
+    // Feed-Forward Stage 2 (Wave Digital Filter)
+    // Models the second feed-forward path circuit
+    // Outputs current for summing at the gain stage
+    // Complex WDF topology with multiple RC networks and gain-dependent voltage divider
+    // Reference: ChowCentaur/TeensyCentaur/src/GainStageProcessors/FeedForward2.h
+    ff2_stage(gain_val, sig) = wd.buildtree(tree)
+    with {
+        // Split gain potentiometer (100 kΩ total)
+        rv_top_val = max(gain_val * 100e3, 1.0);        // Top portion (0-100 kΩ)
+        rv_bot_val = max((1.0 - gain_val) * 100e3, 1.0);  // Bottom portion (100-0 kΩ)
+
+        // WDF components
+        vin(i) = wd.u_voltage(i, -1.0 * sig);   // Input voltage source (inverted)
+        c4(i) = wd.capacitor(i, 68e-9);         // 68 nF
+        c6(i) = wd.capacitor(i, 390e-9);        // 390 nF
+        c11(i) = wd.capacitor(i, 2.2e-9);       // 2.2 nF
+        c12(i) = wd.capacitor(i, 27e-9);        // 27 nF
+        r5(i) = wd.resistor(i, 5100.0);         // 5.1 kΩ
+        r8(i) = wd.resistor(i, 1500.0);         // 1.5 kΩ
+        r9(i) = wd.resistor(i, 1000.0);         // 1 kΩ
+        rv_top(i) = wd.resistor(i, rv_top_val); // Variable (top of pot)
+        rv_bot(i) = wd.resistor(i, rv_bot_val); // Variable (bottom of pot)
+        r15(i) = wd.resistor(i, 22000.0);       // 22 kΩ
+        r16(i) = wd.resistor_Iout(i, 47000.0);  // 47 kΩ (current output)
+        r17(i) = wd.resistor(i, 27000.0);       // 27 kΩ
+        r18(i) = wd.resistor(i, 12000.0);       // 12 kΩ
+        vbias(i) = wd.resVoltage(i, 1.0e-9, 0.0);  // Ground reference (~0 Ω, 0 V)
+
+        // Build WDF tree structure with series/parallel combinations
+        s1 = wd.series : (c12, r18);
+        p1 = wd.parallel : (s1, r17);
+        s2 = wd.series : (c11, r15);
+        s3 = wd.series : (s2, r16);
+        p2 = wd.parallel : (s3, p1);
+        p3 = wd.parallel : (p2, rv_bot);
+        s4 = wd.series : (p3, rv_top);
+        s5 = wd.series : (c6, r9);
+        p4 = wd.parallel : (s4, s5);
+        p5 = wd.parallel : (p4, r8);
+        s6 = wd.series : (p5, vbias);
+        p6 = wd.parallel : (r5, c4);
+
+        tree = vin : wd.series : (p6, s6);
+    };
+
+    // ============= Clipping Stage (Wave Digital Filter) =============
+    // Diode clipping stage using antiparallel diode pair
+    // Topology: diodes connected in parallel with:
+    //   - Input path: vin -> C9 -> R13
+    //   - Bias path: C10 -> Vbias (4.5V, 47kΩ)
+    // Outputs current from capacitor C10 for feedback to summing amplifier
+    // Reference: ChowCentaur/TeensyCentaur/src/GainStageProcessors/ClippingStage.h
+    clipping_stage_juce(sig) = wd.buildtree(tree)
+    with {
+        // Diode parameters - empirically tuned to match ChowCentaur VST output
+        // Note: JUCE source uses Is=15e-6, but 2.52e-9 (from chowdsp test files)
+        // provides better correlation with the VST plugin output
+        Is_juce = 2.52e-9;  // Reverse saturation current (A)
+        Vt = 0.02585;       // Thermal voltage at room temperature (V)
+                            // Vt = kT/q ≈ 26 mV at 25°C
+
+        // Antiparallel diode pair using Wright Omega function
+        // More accurate than Lambert W for diode modeling in WDF
+        diodes(i) = wd.u_diodeAntiparallel_omega(i, Is_juce, Vt, 1.0, 1.0);
+
+        // WDF components
+        vin(i) = wd.resVoltage(i, 1.0, -1.0 * sig);     // 1 Ω source impedance, inverted input
+        c9(i) = wd.capacitor(i, 1.0e-6);                // 1 µF - Input coupling capacitor
+        c10(i) = wd.capacitor_Iout(i, 1.0e-6);          // 1 µF - Bias capacitor (current output)
+        r13(i) = wd.resistor(i, 1000.0);                // 1 kΩ - Series resistor
+        vbias_47k(i) = wd.resVoltage(i, 47000.0, 4.5);  // 47 kΩ resistor, 4.5 V DC bias
+
+        // Build WDF tree: diodes in parallel with input and bias paths
+        s_input_1 = wd.series : (vin, c9);
+        s_input = wd.series : (s_input_1, r13);
+        s_bias = wd.series : (c10, vbias_47k);
+        p1 = wd.parallel : (s_input, s_bias);
+
+        tree = diodes : p1;
+    };
+
+    // Gain Stage - Complete signal path
+    // Combines preamp, amplifier, clipping, and feed-forward paths
+    // Signal flow:
+    //   1. Preamp stage generates voltage and FF1 current
+    //   2. Preamp voltage -> amplifier -> saturation -> diode clipper -> diode current
+    //   3. FF2 stage generates FF2 current directly from input
+    //   4. All currents summed (diode + FF1 + FF2) -> summing amp -> output saturation
+    // This architecture creates the characteristic Klon Centaur overdrive response
+    // Reference: ChowCentaur/GainStageProcessors/GainStageProc.cpp
+    gain_stage(gain_val, sig) = diode_current + ff1_current + ff2_current
+        : summing_amp
+        : saturate_core
+    with {
+        gain_clamped = gain_val : clip(0.0, 1.0);  // Ensure gain in valid range
+
+        // Preamp stage outputs: (voltage, FF1 current)
+        preamp_outputs = preamp_stage(gain_clamped, sig);
+        preamp_voltage = preamp_outputs : ba.selector(0, 2);  // Extract voltage
+        ff1_current = preamp_outputs : ba.selector(1, 2);     // Extract FF1 current
+
+        // Feed-forward path 2 current
+        ff2_current = ff2_stage(gain_clamped, sig);
+
+        // Main signal path: amp -> saturation -> diode clipper
+        // The clipping stage outputs the current through C10 for feedback
+        diode_current = amp_stage(gain_clamped, preamp_voltage)
+            : saturate_input
+            : clipping_stage_juce;
+    };
+};
+declare klonCentaur author "David Braun";
+declare klonCentaur copyright "Chowdhury-DSP";
+declare klonCentaur license "BSD 3-Clause License";

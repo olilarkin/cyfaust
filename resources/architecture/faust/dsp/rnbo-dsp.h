@@ -33,7 +33,10 @@
 #include "rnbo/rnbo/RNBO.h"
 #include "rnbo/rnbo_source.cpp"
 
-class rnbo_dsp : public dsp {
+/**
+ * Faust wrapped RNBO DSP
+ */
+class rnbo_dsp : public ::dsp {
    private:
     RNBO::CoreObject                                                     fDSP;
     FAUSTFLOAT*                                                          fInputsZoneMap;

@@ -26,19 +26,45 @@ architecture section is not modified.
 #define FAUST_DAISYCONTROL_H
 
 #include <string>
-#include <vector>
+#include <array>
 #include <memory>
 #include <string.h>
 
-#include "daisysp.h"
-#include "daisy_seed.h"
-
 #include "faust/gui/DecoratorUI.h"
-#include "faust/gui/ValueConverter.h"
+//#include "faust/gui/ValueConverter.h"
 
 /*******************************************************************************
  * DaisyControlUI : Faust User Interface
  ******************************************************************************/
+
+#if defined POD
+/*
+Note from DBraun: This section has been tested for Pod Rev5.
+If it doesn't work correctly on earlier versions, sorry! Please make a PR and
+we'll add a flag to faust2daisy for the Pod version.
+*/
+// https://github.com/electro-smith/libDaisy/blob/bd13385c823b6777d7f3c0a90c488a345409175c/src/daisy_pod.cpp#L10-L27
+#define SW_1_PIN 27
+#define SW_2_PIN 28
+// not used:
+#define SW_3_PIN 1 // spdt switches
+#define SW_4_PIN 2 // spdt switches
+
+// We swap these two knobs in Faust (maybe the Daisy source is wrong.)
+#define KNOB_1_PIN 15
+#define KNOB_2_PIN 21
+// not used, but copied from legacy code anyway:
+#define KNOB_3_PIN 21
+#define KNOB_4_PIN 18
+#define KNOB_5_PIN 19
+#define KNOB_6_PIN 17
+#else
+/*
+Note from DBraun: This section is legacy code for people using the Seed, 
+not the Pod or patch.Init(). It hasn't been tested recently.
+I have only recently tested that the above POD section is correct for
+Pod Rev5.
+*/
 
 // Compatible with Seed Rev3 and Rev4
 /*
@@ -62,12 +88,76 @@ architecture section is not modified.
 #define KNOB_5_PIN 19
 #define KNOB_6_PIN 17
 
+#endif
+
+#include "per/adc.h"
+#include "per/dac.h"
+
+#ifdef SEED
+    using namespace daisy::seed;
+    constexpr size_t ADC_COUNT = 12;
+    constexpr daisy::Pin ADC[] = {A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11};
+    constexpr size_t DAC_COUNT = 2;
+    constexpr daisy::Pin DAC[] = {A7, A8};
+#elif defined PATCHSM
+
+#endif
+
+
 class DaisyControlUI : public GenericUI
 {
     
     private:
+        size_t control_counter = 0;
+        size_t dac_counter = 0; 
     
-        // Base class for updatable items
+        #if defined PATCHSM
+        bool fQuantize = false;
+        #elif defined SEED
+        #endif
+    
+        std::string fKey, fValue, fScale;
+        int fRate, fBoxLevel;
+
+        #if defined PATCHSM
+    
+        void InitKnob(int knob_pin, FAUSTFLOAT* zone, FAUSTFLOAT min, FAUSTFLOAT max, const std::string& scale, FAUSTFLOAT step, bool quantize)
+        {
+        }
+    
+        void InitKnobs()
+        {
+        }
+        #else
+        
+        void InitKnob(int knob_pin, int adc_id, FAUSTFLOAT* zone, FAUSTFLOAT min, FAUSTFLOAT max, const std::string& scale)
+        {
+        }
+    
+        void InitKnobs()
+        {
+        }
+        #endif
+        
+    public:
+        
+        // -- widget's layouts
+        void openTabBox(const char* label) {  }
+        void openHorizontalBox(const char* label) {  }
+        void openVerticalBox(const char* label) {  }
+        void closeBox(){}
+    
+        // -- active widgets
+        void addButton(const char* label, FAUSTFLOAT* zone)
+        {
+            addADCEntry(label, zone);
+        }
+    
+        void addCheckButton(const char* label, FAUSTFLOAT* zone)
+        {
+            addADCEntry(label, zone);
+        }
+            // Base class for updatable items
         struct UpdatableZone {
             FAUSTFLOAT* fZone;
             
@@ -106,177 +196,91 @@ class DaisyControlUI : public GenericUI
             }
         };
     
-        struct AnalogKnob : daisy::AnalogControl, UpdatableZone {
-            
-            std::unique_ptr<ValueConverter> fConverter;
-            
-            AnalogKnob(uint16_t* adcptr, FAUSTFLOAT* zone, std::unique_ptr<ValueConverter>& converter, int rate)
-            :UpdatableZone(zone), fConverter(std::move(converter))
-            {
-                Init(adcptr, rate);
-            }
-            
-            void update()
-            {
-                *fZone = fConverter->ui2faust(Process());
-            }
-        };
-    
-        std::vector<std::unique_ptr<UpdatableZone>> fItems;
-        daisy::DaisySeed* fSeed;
-    
-        std::string fKey, fValue, fScale;
-        int fRate, fBoxLevel;
-    
-        struct KnobContext
-        {
-            int fKnobId;
-            int fAdcId;
-            FAUSTFLOAT* fZone;
-            FAUSTFLOAT fMin;
-            FAUSTFLOAT fMax;
-            std::string fScale;
-            KnobContext(int kid,
-                        int adcid,
-                        FAUSTFLOAT* zone,
-                        FAUSTFLOAT min,
-                        FAUSTFLOAT max,
-                        const std::string& scale)
-            :fKnobId(kid), fAdcId(adcid), fZone(zone), fMin(min), fMax(max), fScale(scale)
-            {}
-        };
-        std::vector<KnobContext> fKnobs;
-    
-        void InitKnob(int knob_pin, int adc_id, FAUSTFLOAT* zone, FAUSTFLOAT min, FAUSTFLOAT max, const std::string& scale)
-        {
-            // context is kept, to be used in InitKnobs()
-            fKnobs.push_back(KnobContext(knob_pin, adc_id, zone, min, max, scale));
-        }
-    
-        void InitKnobs()
-        {
-            // initialize all knobs in a single step
-            daisy::AdcChannelConfig knobs_init[fKnobs.size()];
-            for (size_t i = 0; i < fKnobs.size(); i++) {
-                knobs_init[i].InitSingle(fSeed->GetPin(fKnobs[i].fKnobId));
-            }
-            fSeed->adc.Init(knobs_init, fKnobs.size());
-            
-            for (size_t i = 0; i < fKnobs.size(); i++) {
-                std::unique_ptr<ValueConverter> converter;
-                if (fKnobs[i].fScale == "log") {
-                    converter = std::make_unique<LogValueConverter>(0., 1., fKnobs[i].fMin, fKnobs[i].fMax);
-                } else if (fKnobs[i].fScale == "exp") {
-                    converter = std::make_unique<ExpValueConverter>(0., 1., fKnobs[i].fMin, fKnobs[i].fMax);
-                } else {
-                    converter = std::make_unique<LinearValueConverter>(0., 1., fKnobs[i].fMin, fKnobs[i].fMax);
-                }
-                std::unique_ptr<AnalogKnob> knob = std::make_unique<AnalogKnob>(fSeed->adc.GetPtr(fKnobs[i].fAdcId),
-                                                  fKnobs[i].fZone,
-                                                  converter,
-                                                  fRate);
-                fItems.push_back(std::move(knob));
-            }
-        }
-        
-    public:
-        
-        DaisyControlUI(daisy::DaisySeed* seed, int rate)
-        :fSeed(seed), fScale("lin"),fRate(rate), fBoxLevel(0)
-        {}
-    
-        // -- widget's layouts
-        void openTabBox(const char* label) { fBoxLevel++; }
-        void openHorizontalBox(const char* label) { fBoxLevel++; }
-        void openVerticalBox(const char* label) { fBoxLevel++; }
-        void closeBox()
-        {
-            if (--fBoxLevel == 0) InitKnobs();
-        }
-    
-        // -- active widgets
-        void addButton(const char* label, FAUSTFLOAT* zone)
-        {
-            if (fKey == "switch") {
-                std::unique_ptr<SwitchButton> button = std::make_unique<SwitchButton>(zone);
-                if (fValue == "1") {
-                    button->Init(fSeed->GetPin(SW_1_PIN), fRate);
-                } else if (fValue == "2") {
-                    button->Init(fSeed->GetPin(SW_2_PIN), fRate);
-                } else if (fValue == "3") {
-                    button->Init(fSeed->GetPin(SW_3_PIN), fRate);
-                } else if (fValue == "4") {
-                    button->Init(fSeed->GetPin(SW_4_PIN), fRate);
-                }
-                fItems.push_back(std::move(button));
-            }
-            fValue = fKey = fScale = "";
-        }
-    
-        void addCheckButton(const char* label, FAUSTFLOAT* zone)
-        {
-            if (fKey == "switch") {
-                std::unique_ptr<CheckButton> button = std::make_unique<CheckButton>(zone);
-                if (fValue == "1") {
-                    button->Init(fSeed->GetPin(SW_1_PIN), fRate);
-                } else if (fValue == "2") {
-                    button->Init(fSeed->GetPin(SW_2_PIN), fRate);
-                } else if (fValue == "3") {
-                    button->Init(fSeed->GetPin(SW_3_PIN), fRate);
-                } else if (fValue == "4") {
-                    button->Init(fSeed->GetPin(SW_4_PIN), fRate);
-                }
-                fItems.push_back(std::move(button));
-            }
-            fValue = fKey = fScale = "";
-        }
-    
+        #if defined PATCHSM
+        #elif defined SEED
+        #endif
+
         void addVerticalSlider(const char* label, FAUSTFLOAT* zone, FAUSTFLOAT init, FAUSTFLOAT min, FAUSTFLOAT max, FAUSTFLOAT step)
         {
-            addNumEntry(label, zone, init, min, max, step);
+            addADCEntry(label, zone);
         }
         void addHorizontalSlider(const char* label, FAUSTFLOAT* zone, FAUSTFLOAT init, FAUSTFLOAT min, FAUSTFLOAT max, FAUSTFLOAT step)
         {
-            addNumEntry(label, zone, init, min, max, step);
+            addADCEntry(label, zone);
         }
+
         void addNumEntry(const char* label, FAUSTFLOAT* zone, FAUSTFLOAT init, FAUSTFLOAT min, FAUSTFLOAT max, FAUSTFLOAT step)
         {
-            if (fKey == "knob") {
-                if (fValue == "1") {
-                    InitKnob(KNOB_1_PIN, 0, zone, min, max, fScale);
-                } else if (fValue == "2") {
-                    InitKnob(KNOB_2_PIN, 1, zone, min, max, fScale);
-                } else if (fValue == "3") {
-                    InitKnob(KNOB_3_PIN, 2, zone, min, max, fScale);
-                } else if (fValue == "4") {
-                    InitKnob(KNOB_4_PIN, 3, zone, min, max, fScale);
-                } else if (fValue == "5") {
-                    InitKnob(KNOB_5_PIN, 4, zone, min, max, fScale);
-                } else if (fValue == "6") {
-                    InitKnob(KNOB_6_PIN, 5, zone, min, max, fScale);
-                }
-            }
-            fValue = fKey = fScale = "";
+            addADCEntry(label, zone);
         }
     
+        void addADCEntry(const char *label, FAUSTFLOAT *zone)
+        {
+            //assert( strcmp(label, adc_list[build_ui_counter].label) == 0 );
+            input_list[control_counter]->set_value_ptr(zone);
+            input_list[control_counter]->setup();
+            control_counter++;
+        }
+
+        virtual void addHorizontalBargraph(const char* label, FAUSTFLOAT* zone, FAUSTFLOAT min, FAUSTFLOAT max)
+        { 
+            addDACEntry(label, zone);
+        }
+        virtual void addVerticalBargraph(const char* label, FAUSTFLOAT* zone, FAUSTFLOAT min, FAUSTFLOAT max)
+        {
+            addDACEntry(label, zone);
+        }
+
+
+        void addDACEntry(const char *label, FAUSTFLOAT *zone)
+        {
+            output_list[dac_counter]->set_value_ptr( zone );
+            dac_counter = (dac_counter + 1) % output_list.size();
+        }
+
         // -- metadata declarations
         void declare(FAUSTFLOAT* zone, const char* key, const char* val)
         {
-            if (strcmp(key, "switch") == 0
-                || strcmp(key, "knob") == 0
-                || strcmp(key, "encoder") == 0) {
-                fKey = key;
-                fValue = val;
-            } else if (std::string(key) == "scale") {
-                fScale = val;
+        }
+    
+        void update_adcs()
+        {
+            for(auto & it : input_list) 
+            {
+                it->update();
             }
         }
-    
-        void update()
+
+        void update_dacs()
         {
-            for (const auto& it : fItems) it->update();
+            for(auto & it : output_list) 
+                it->update();
         }
-    
+
+        void setup_controls()
+        {
+            #ifdef SEED
+            for(size_t i = 0; i < adc_list.size(); ++i)
+            {
+                adc_config_list[i].InitSingle(adc_list[i].pin);
+                adc_list[i].channel = i;
+            }
+
+            hw.adc.Init(adc_config_list.data(), adc_config_list.size());
+
+            if(dacs_used)
+            {
+                daisy::DacHandle::Config cfg; 
+                cfg.chn = dac_chnls;
+                cfg.mode = daisy::DacHandle::Mode::POLLING;
+                cfg.bitdepth = daisy::DacHandle::BitDepth::BITS_12;
+                cfg.buff_state = daisy::DacHandle::BufferState::ENABLED; 
+                hw.dac.Init(cfg); 
+            }
+
+            #elif defined PATCHSM
+            #endif
+        }
 };
 
 #endif // FAUST_DAISYCONTROL_H

@@ -49,19 +49,22 @@ architecture section is not modified.
 /**
  * Helper code for MIDI meta and polyphonic 'nvoices' parsing.
  */
-struct MidiMeta : public Meta, public std::map<std::string, std::string> {
+struct MidiMeta : public Meta {
     
-    void declare(const char* key, const char* value)
+    std::map<std::string, std::string> fData;
+    
+    void declare(const char* key, const char* value) override
     {
-        (*this)[key] = value;
+        fData[key] = value;
     }
     
-    const std::string get(const char* key, const char* def)
+    const std::string get(const char* key, const char* def) const noexcept
     {
-        return (this->find(key) != this->end()) ? (*this)[key] : def;
+        auto it = fData.find(key);
+        return (it != fData.end()) ? it->second : def;
     }
     
-    static void analyse(dsp* mono_dsp, bool& midi_sync, int& nvoices)
+    static void analyse(dsp* mono_dsp, bool& midi, bool& midi_sync, int& nvoices)
     {
         JSONUI jsonui;
         mono_dsp->buildUserInterface(&jsonui);
@@ -73,11 +76,13 @@ struct MidiMeta : public Meta, public std::map<std::string, std::string> {
                       (json.find("timestamp") != std::string::npos)));
     
     #if defined(NVOICES) && NVOICES!=NUM_VOICES
+        // Compile-time override
         nvoices = NVOICES;
     #else
         MidiMeta meta;
         mono_dsp->metadata(&meta);
         bool found_voices = false;
+        bool found_midi = false;
         // If "options" metadata is used
         std::string options = meta.get("options", "");
         if (options != "") {
@@ -88,6 +93,10 @@ struct MidiMeta : public Meta, public std::map<std::string, std::string> {
                 nvoices = std::atoi(metadata["nvoices"].c_str());
                 found_voices = true;
             }
+            if (metadata.find("midi") != metadata.end()) {
+                midi = (metadata["midi"] == "on" || metadata["midi"] == "1");
+                found_midi = true;
+            }
         }
         // Otherwise test for "nvoices" metadata
         if (!found_voices) {
@@ -95,6 +104,11 @@ struct MidiMeta : public Meta, public std::map<std::string, std::string> {
             nvoices = std::atoi(numVoices.c_str());
         }
         nvoices = std::max<int>(0, nvoices);
+        // Otherwise test for "midi" metadata
+        if (!found_midi) {
+            std::string midiState = meta.get("midi", "off");
+            midi = (midiState == "on" || midiState == "1");
+        }
     #endif
     }
     
@@ -688,7 +702,6 @@ class MidiUI : public GUI, public midi, public midi_interface, public MetaDataUI
         std::vector<std::pair <std::string, std::string> > fMetaAux;
         
         midi_handler* fMidiHandler;
-        bool fDelete;
         bool fTimeStamp;
     
         void addGenericZone(FAUSTFLOAT* zone, FAUSTFLOAT min, FAUSTFLOAT max, bool input = true)
@@ -783,12 +796,10 @@ class MidiUI : public GUI, public midi, public midi_interface, public MetaDataUI
     
     public:
     
-        MidiUI(midi_handler* midi_handler, bool delete_handler = false)
+        MidiUI(midi_handler* midi_handler)
         {
             fMidiHandler = midi_handler;
             fMidiHandler->addMidiIn(this);
-            // TODO: use shared_ptr based implementation
-            fDelete = delete_handler;
             fTimeStamp = false;
         }
  
@@ -796,9 +807,11 @@ class MidiUI : public GUI, public midi, public midi_interface, public MetaDataUI
         {
             // Remove from fMidiHandler
             fMidiHandler->removeMidiIn(this);
-            // TODO: use shared_ptr based implementation
-            if (fDelete) delete fMidiHandler;
         }
+
+#ifdef DAISY_NO_RTTI
+        virtual bool isMidiInterface() const override { return true; }
+#endif
     
         bool run() { return fMidiHandler->startMidi(); }
         void stop() { fMidiHandler->stopMidi(); }

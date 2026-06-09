@@ -1,7 +1,16 @@
-//#################################### routes.lib ########################################
-// A library to handle signal routing in Faust. Its official prefix is `ro`.
+//################################ routes.lib ##########################################
+// Routing library. Its official prefix is `ro`.
 //
+// This library provides tools for managing and organizing audio and control signal
+// routing in Faust. It includes functions for channel mapping, splitting, merging, and
+// dynamic routing, as well as utilities for building multichannel processing structures.
+//
+// The Routes library is organized into 1 section:
+//
+// * [Functions Reference](#functions-reference)
+// 
 // #### References
+//
 // * <https://github.com/grame-cncm/faustlibraries/blob/master/routes.lib>
 //########################################################################################
 
@@ -42,7 +51,7 @@ si = library("signals.lib");
 sp = library("spats.lib");
 
 declare name "Faust Signal Routing Library";
-declare version "1.2.0";
+declare version "1.3.0";
 
 //=============================Functions Reference========================================
 //========================================================================================
@@ -61,6 +70,13 @@ declare version "1.2.0";
 // Where:
 //
 // * `N`: number of signals (int, as a constant numerical expression)
+//
+// #### Test
+// ```
+// ro = library("routes.lib");
+// os = library("oscillators.lib");
+// cross_test = (os.osc(200), os.osc(300), os.osc(400)) : ro.cross(3);
+// ```
 //
 // #### Note
 //
@@ -87,6 +103,13 @@ cross2 = _,cross(2),_; // for compatibility with some old misceffects.lib functi
 // Where:
 //
 // * `N`: the number of signals in the `bus` (int, as a constant numerical expression)
+//
+// #### Test
+// ```
+// ro = library("routes.lib");
+// os = library("oscillators.lib");
+// crossnn_test = (os.osc(110), os.osc(220), os.osc(330), os.osc(440)) : ro.crossnn(2);
+// ```
 //--------------------------------------
 crossnn(N) = crossNM(N,N);
 
@@ -103,6 +126,13 @@ crossnn(N) = crossNM(N,N);
 // Where:
 //
 // * `N`: the number of signals in the first `bus` (int, as a constant numerical expression)
+//
+// #### Test
+// ```
+// ro = library("routes.lib");
+// os = library("oscillators.lib");
+// crossn1_test = (os.osc(100), os.osc(200), os.osc(300), os.osc(400)) : ro.crossn1(3);
+// ```
 //--------------------------------------
 crossn1(N) = crossNM(N,1);
 
@@ -119,6 +149,13 @@ crossn1(N) = crossNM(N,1);
 // Where:
 //
 // * `N`: the number of signals in the second `bus` (int, as a constant numerical expression)
+//
+// #### Test
+// ```
+// ro = library("routes.lib");
+// os = library("oscillators.lib");
+// cross1n_test = (os.osc(150), os.osc(250), os.osc(350), os.osc(450)) : ro.cross1n(3);
+// ```
 //--------------------------------------
 cross1n(N) = crossNM(1,N);
 
@@ -136,14 +173,26 @@ cross1n(N) = crossNM(1,N);
 //
 // * `N`: the number of signals in the first `bus` (int, as a constant numerical expression)
 // * `M`: the number of signals in the second `bus` (int, as a constant numerical expression)
+//
+// #### Test
+// ```
+// ro = library("routes.lib");
+// os = library("oscillators.lib");
+// crossNM_test = (os.osc(180), os.osc(280), os.osc(380), os.osc(480), os.osc(580)) : ro.crossNM(2,3);
+// ```
 //--------------------------------------
 crossNM(N,M) = route(N+M, N+M, par(i, N+M, i+1, ((i+M)%(N+M))+1));
 
 
 //--------------------------`(ro.)interleave`------------------------------
-// Interleave R x C cables from column order to row order.
-// input : x(0), x(1), x(2) ..., x(row*col-1)
-// output: x(0+0*row), x(0+1*row), x(0+2*row), ..., x(1+0*row), x(1+1*row), x(1+2*row), ...
+// Interleave R x C cables from column order to row order. That is, transpose the input CxR matrix, 
+// the first R inputs is the first row.
+//
+// input : `x(0), x(1), x(2) ..., x(row*col-1)`
+//
+// output: `x(0+0*row), x(0+1*row), x(0+2*row), ..., x(1+0*row), x(1+1*row), x(1+2*row), ...`
+// 
+// 
 //
 // #### Usage
 //
@@ -153,12 +202,18 @@ crossNM(N,M) = route(N+M, N+M, par(i, N+M, i+1, ((i+M)%(N+M))+1));
 //
 // Where:
 //
-// * `R`: the number of row (int, as a constant numerical expression)
-// * `C`: the number of column (int, as a constant numerical expression)
+// * `R`: row length (int, as a constant numerical expression)
+// * `C`: column length (int, as a constant numerical expression)
+//
+// #### Test
+// ```
+// ro = library("routes.lib");
+// os = library("oscillators.lib");
+// interleave_test = (os.osc(200), os.osc(300), os.osc(400), os.osc(500)) : ro.interleave(2,2);
+// ```
 //-----------------------------------------------------------------------------
 interleave(1,2) = _,_;
 interleave(R,C) = route(R*C, R*C, par(i, R*C, (i+1, (i%R)*C + int(i/R) + 1)));
-
 
 //-------------------------------`(ro.)butterfly`--------------------------------
 // Addition (first half) then substraction (second half) of interleaved signals.
@@ -172,6 +227,13 @@ interleave(R,C) = route(R*C, R*C, par(i, R*C, (i+1, (i%R)*C + int(i/R) + 1)));
 // Where:
 //
 // * `N`: size of the butterfly (N is int, even and as a constant numerical expression)
+//
+// #### Test
+// ```
+// ro = library("routes.lib");
+// os = library("oscillators.lib");
+// butterfly_test = (os.osc(250), os.osc(350), os.osc(450), os.osc(550)) : ro.butterfly(4);
+// ```
 //-----------------------------------------------------------------------------
 butterfly(2) = si.bus(2) <: +,-;
 butterfly(N) = si.bus(N) <: interleave(N/2,2), interleave(N/2,2) : par(i, N/2, +), par(i, N/2, -);
@@ -190,6 +252,12 @@ butterfly(N) = si.bus(N) <: interleave(N/2,2), interleave(N/2,2) : par(i, N/2, +
 //
 // * `N`: `2^k`, size of the matrix (int, as a constant numerical expression)
 //
+// #### Test
+// ```
+// ro = library("routes.lib");
+// os = library("oscillators.lib");
+// hadamard_test = (os.osc(220), os.osc(330), os.osc(440), os.osc(550)) : ro.hadamard(4);
+// ```
 //-----------------------------------------------------------------------------
 declare hadamard author "Remy Muller, revised by Romain Michon";
 hadamard(2) = butterfly(2);
@@ -210,6 +278,13 @@ hadamard(N) = butterfly(N) : (hadamard(N/2), hadamard(N/2));
 //
 // * `p`: the forward arbitrary processor
 // * `q`: the feedback arbitrary processor
+//
+// #### Test
+// ```
+// ro = library("routes.lib");
+// os = library("oscillators.lib");
+// recursivize_test = (os.osc(220), os.osc(330)) : ro.recursivize(*(0.5), *(0.3));
+// ```
 //----------------------------------------
 recursivize(p,q) = (_,_,_,_ :> sp.stereoize(p)) ~ sp.stereoize(q);
 
@@ -244,8 +319,20 @@ recursivize(p,q) = (_,_,_,_ :> sp.stereoize(p)) ~ sp.stereoize(q);
 //
 // * `N`: the number of signals to be sorted (must be an int >= 0, as a constant numerical expression)
 //
-// #### Reference
-// <https://en.wikipedia.org/wiki/Bubble_sort>
+// #### Test
+// ```
+// ro = library("routes.lib");
+// bubbleSort_test = (
+//     hslider("bubbleSort:x0", 0.3, -1, 1, 0.01),
+//     hslider("bubbleSort:x1", -0.2, -1, 1, 0.01),
+//     hslider("bubbleSort:x2", 0.8, -1, 1, 0.01),
+//     hslider("bubbleSort:x3", -0.5, -1, 1, 0.01)
+// ) : ro.bubbleSort(4);
+// ```
+//
+// #### References
+//
+// * <https://en.wikipedia.org/wiki/Bubble_sort>
 //------------------------------------------------------------------------------
 declare bubbleSort author "Dario Sanfilippo";
 declare bubbleSort copyright "Copyright (C) 2021 Dario Sanfilippo
@@ -260,3 +347,198 @@ bubbleSort(N) = seq(i, N - 1, pairSortN(N - i), bus(i))
         pairSort = bus(2) <: select2(>), select2(<);
         pairSortN(N) = seq(i, N - 1, bus(i), pairSort, bus(N - i - 2));
     };
+
+
+//--------------------(ro.)bitonicSort------------------------------------------
+//
+// A bitonic sorter is a parallel sorting network that performs comparisons
+// and swaps on signal pairs iteratively. The pairs are selected according
+// to different index gaps determined by the current state and pass indices, 
+// while the sorting direction of each pair depends on the current stage index.
+//
+// The algorithm first builds a bitonic sequence with the input values, 
+// that is, a sequence that is ascending for the first half, and descending 
+// for the second half. Then, it applies a bitonic merger to sort the bitonic
+// list in ascending or descending order.
+//
+// The algorithm has O(log2(N) ^ 2) depth complexity, and O(N * log2(N) ^ 2)
+// work complexity. Specifically, the bitonic sorter algorithm requires N 
+// inputs to be a power-of-two. The algorithm has a total of 
+// log2(N) * ((log2(N) + 1) / 2) stages, and each stage requires N / 2 
+// comparators. Each comparator has one min() and one max() function.
+//
+// For comparison, the Bubble Sort algorithm has N - 1 stages, and
+// N * (N - 1) / 2 comparators. For N = 32, Bitonic Sort has 15 stages
+// and 240 comparators, Bubble Sort has 31 stages and 496 comparators.
+//
+// The sorting process is zero-latency.
+//
+// #### Usage
+//
+// ```
+// si.bus(N) : bitonicSort(N) : si.bus(N)
+//
+// ```
+//
+// Where:
+//
+// * `N`: the number of signals to be sorted (it must be a power-of-two 
+// compile-time numerical expression)
+//
+// #### Test
+// ```
+// ro = library("routes.lib");
+// bitonicSort_test = (
+//     hslider("bubbleSort:x0", 0.3, -1, 1, 0.01),
+//     hslider("bubbleSort:x1", -0.2, -1, 1, 0.01),
+//     hslider("bubbleSort:x2", 0.8, -1, 1, 0.01),
+//     hslider("bubbleSort:x3", -0.5, -1, 1, 0.01)
+// ) : ro.bitonicSort(4);
+// ```
+//
+// #### References
+//
+// * <https://en.wikipedia.org/wiki/Bitonic_sorter>
+declare bitonicSort author "Dario Sanfilippo";
+declare bitonicSort copyright "Copyright (C) 2026 Dario Sanfilippo
+    <sanfilippo.dario@gmail.com>";
+declare bitonicSort license "MIT License";
+
+/// Helper 0-indexed route wrapper
+route0idx(N, M, connectionList) = 
+    route(N, M, si.vecOp((connectionList, par(i, outputs(connectionList), 1)), +));
+/// Ascending and descending comparators
+comparatorDes(x0, x1) = max(x0, x1) , min(x0, x1);
+comparatorAsc(x0, x1) = min(x0, x1) , max(x0, x1);
+comparator(0, x0, x1) = comparatorDes(x0, x1);
+comparator(1, x0, x1) = comparatorAsc(x0, x1);
+/// Direction selector, according to the stage index
+comparatorDirections(N, s) = par(i, N / 2, (i % (2 ^ (s + 1)) < (2 ^ s)));
+/// Comparison input routing pairs
+bitonicRouteCompareInputList(N, G) = inlets , outlets : interleave(N, 2) with {
+    inlets = par(j, N / (2 * G) , par(i, G, i + j * (2 * G) , i + G + j * (2 * G)));
+    outlets = par(i, N, i);
+};
+/// Comparison output unrouting pairs
+bitonicRouteCompareOutputList(N, G) = inlets , outlets : interleave(N, 2) with {
+    inlets = par(i, N, i);
+    outlets = par(j, N / (2 * G) , par(i, G, i + j * (2 * G) , i + G + j * (2 * G)));
+};
+/// Apply routing
+bitonicRouteInput(N, G) = route0idx(N, N, (bitonicRouteCompareInputList(N, G)));
+bitonicRouteOutput(N, G) = route0idx(N, N, (bitonicRouteCompareOutputList(N, G)));
+/// Bitonic sequence builder layer
+bitonicBuilderLayer(N, s, p) = Y with {
+    G = 2 ^ (s - p);
+    D(i) = ba.pick(comparatorDirections(N, s), i);
+    Y = bitonicRouteInput(N, G) : par(i, N / 2, comparator(D(i))) : bitonicRouteOutput(N, G);
+};
+/// Bitonic sequence builder network
+bitonicBuilderNetwork(N) = Y with {
+    S = rint(log2(N) - 1);
+    Y = seq(s, S, seq(p, s + 1, bitonicBuilderLayer(N, s, p)));
+    log2(x) = log(x)/log(2.0);
+};
+/// Bitonic sorter layer
+bitonicSorterLayer(N, s, p) = Y with {
+    G = 2 ^ (s - p);
+    Y = bitonicRouteInput(N, G) : par(i, N / 2, comparator(1)) : bitonicRouteOutput(N, G);
+};
+/// Bitonic sorter network
+bitonicSorterNetwork(N) = Y with {
+    S = rint(log2(N) - 1);
+    Y = seq(p, S + 1, bitonicSorterLayer(N, S, p));
+    log2(x) = log(x)/log(2.0);
+};
+/// Bitonic sorter
+bitonicSort(N) = bitonicBuilderNetwork(N) : bitonicSorterNetwork(N);
+
+
+//--------------------(ro.)bitonicSortIdx---------------------------------------
+//
+// This function is based on the `bitonicSort` function, except it returns the 
+// set of indices for the ordered input values. This is useful if you want
+// to sort one set based on another one.
+//
+// #### Usage
+//
+// ```
+// si.bus(N) : bitonicSortIdx(N) : si.bus(N)
+//
+// ```
+//
+// Where:
+//
+// * `N`: the number of signals to be sorted (it must be a power-of-two
+// compile-time numerical expression)
+//
+// #### Test
+// ```
+// ro = library("routes.lib");
+// bitonicSortIdx_test = (
+//     hslider("bubbleSort:x0", 0.3, -1, 1, 0.01),
+//     hslider("bubbleSort:x1", -0.2, -1, 1, 0.01),
+//     hslider("bubbleSort:x2", 0.8, -1, 1, 0.01),
+//     hslider("bubbleSort:x3", -0.5, -1, 1, 0.01)
+// ) : ro.bitonicSortIdx(4);
+// ```
+//
+// #### References
+//
+// * <https://en.wikipedia.org/wiki/Bitonic_sorter>
+declare bitonicSortIdx author "Dario Sanfilippo";
+declare bitonicSortIdx copyright "Copyright (C) 2026 Dario Sanfilippo
+    <sanfilippo.dario@gmail.com>";
+declare bitonicSortIdx license "MIT License";
+
+comparatorDesIdx(x0, i0, x1, i1) = ba.if(cond, x1, x0) , ba.if(cond, i1, i0) , ba.if(cond, x0, x1) , ba.if(cond, i0, i1) with {
+    cond = x1 > x0;
+};
+comparatorAscIdx(x0, i0, x1, i1) = ba.if(cond, x1, x0) , ba.if(cond, i1, i0) , ba.if(cond, x0, x1) , ba.if(cond, i0, i1) with {
+    cond = x0 > x1;
+};
+comparatorIdx(0, x0, i0, x1, i1) = comparatorDesIdx(x0, i0, x1, i1);
+comparatorIdx(1, x0, i0, x1, i1) = comparatorAscIdx(x0, i0, x1, i1);
+comparatorDirectionsIdx(N, s) = par(i, N / 2, (i % (2 ^ (s + 1)) < (2 ^ s)));
+
+bitonicRouteCompareInputListIdx(N, G) = inlets , outlets : interleave(2 * N, 2) with {
+    inlets = par(j, N / (2 * G) , par(i, G,
+        2 * (i + j * (2 * G)) ,
+        2 * (i + j * (2 * G)) + 1 ,
+        2 * (i + G + j * (2 * G)) ,
+        2 * (i + G + j * (2 * G)) + 1
+    ));
+    outlets = par(i, N, 2 * i , 2 * i + 1);
+};
+bitonicRouteCompareOutputListIdx(N, G) = inlets , outlets : interleave(2 * N, 2) with {
+    inlets = par(i, N, 2 * i , 2 * i + 1);
+    outlets = par(j, N / (2 * G) , par(i, G,
+        2 * (i + j * (2 * G)) ,
+        2 * (i + j * (2 * G)) + 1 ,
+        2 * (i + G + j * (2 * G)) ,
+        2 * (i + G + j * (2 * G)) + 1
+    ));
+};
+bitonicRouteInputIdx(N, G) = route0idx(2 * N, 2 * N, (bitonicRouteCompareInputListIdx(N, G)));
+bitonicRouteOutputIdx(N, G) = route0idx(2 * N, 2 * N, (bitonicRouteCompareOutputListIdx(N, G)));
+
+bitonicBuilderLayerIdx(N, s, p) = Y with {
+    G = 2 ^ (s - p);
+    D(i) = ba.pick(comparatorDirectionsIdx(N, s), i);
+    Y = bitonicRouteInputIdx(N, G) : par(i, N / 2, comparatorIdx(D(i))) : bitonicRouteOutputIdx(N, G);
+};
+bitonicBuilderNetworkIdx(N) = Y with {
+    S = rint(log2(N) - 1);
+    Y = seq(s, S, seq(p, s + 1, bitonicBuilderLayerIdx(N, s, p)));
+    log2(x) = log(x)/log(2.0);
+};
+bitonicSorterLayerIdx(N, s, p) = Y with {
+    G = 2 ^ (s - p);
+    Y = bitonicRouteInputIdx(N, G) : par(i, N / 2, comparatorIdx(1)) : bitonicRouteOutputIdx(N, G);
+};
+bitonicSorterNetworkIdx(N) = Y with {
+    S = rint(log2(N) - 1);
+    Y = seq(p, S + 1, bitonicSorterLayerIdx(N, S, p));
+    log2(x) = log(x)/log(2.0);
+};
+bitonicSortIdx(N) = si.bus(N) , par(i, N, i) : interleave(N, 2) : bitonicBuilderNetworkIdx(N) : bitonicSorterNetworkIdx(N) : par(i, N, ! , _);

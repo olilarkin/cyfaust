@@ -63,10 +63,11 @@ class FaustPolyEngine {
         void init(dsp* mono_dsp, audio* driver, midi_handler* handler)
         {
             bool midi_sync = false;
+            bool midi = false;
             int nvoices = 0;
             fRunning = false;
             
-            MidiMeta::analyse(mono_dsp, midi_sync, nvoices);
+            MidiMeta::analyse(mono_dsp, midi, midi_sync, nvoices);
             
             // Getting the UI JSON
             JSONUI jsonui1(mono_dsp->getNumInputs(), mono_dsp->getNumOutputs());
@@ -120,16 +121,12 @@ class FaustPolyEngine {
             fFinalDSP->metadata(&meta);
             if (handler) handler->setName(meta.fName);
             
-            if (driver) {
-                // If driver cannot be initialized, start will fail later on...
-                if (!driver->init(meta.fName.c_str(), fFinalDSP)) {
-                    delete driver;
-                    fDriver = nullptr;
-                } else {
-                    fDriver = driver;
-                }
+            // If driver cannot be initialized, start will fail later on...
+            if (!driver->init(meta.fName.c_str(), fFinalDSP)) {
+                delete fFinalDSP;
+                throw std::bad_alloc();
             } else {
-                fDriver = nullptr;
+                fDriver = driver;
             }
         }
     
@@ -143,7 +140,6 @@ class FaustPolyEngine {
     
         virtual ~FaustPolyEngine()
         {
-            delete fDriver;
             delete fFinalDSP;
         }
 
@@ -155,7 +151,7 @@ class FaustPolyEngine {
         bool start()
         {
             if (!fRunning) {
-                fRunning = (fDriver) ? fDriver->start() : false;
+                fRunning = fDriver->start();
             }
             return fRunning;
         }
@@ -178,7 +174,7 @@ class FaustPolyEngine {
         {
             if (fRunning) {
                 fRunning = false;
-                if (fDriver) fDriver->stop();
+                fDriver->stop();
             }
         }
     
@@ -553,7 +549,7 @@ class FaustPolyEngine {
          * getCPULoad()
          * Return DSP CPU load.
          */
-        float getCPULoad() { return (fDriver) ? fDriver->getCPULoad() : 0.f; }
+        float getCPULoad() { return fDriver->getCPULoad(); }
 
         /*
          * getScreenColor()

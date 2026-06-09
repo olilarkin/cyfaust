@@ -110,22 +110,23 @@ int main(int argc, char* argv[])
     char rcfilename[256];
     char* home = getenv("HOME");
     bool midi_sync = false;
+    bool midi = false;
     int nvoices = 0;
     bool control = true;
     
     mydsp* tmp_dsp = new mydsp();
-    MidiMeta::analyse(tmp_dsp, midi_sync, nvoices);
+    MidiMeta::analyse(tmp_dsp, midi, midi_sync, nvoices);
     delete tmp_dsp;
 
     snprintf(name, 256, "%s", basename(argv[0]));
     snprintf(rcfilename, 256, "%s/.%src", home, name);
     
     if (isopt(argv, "-h")) {
-        cout << argv[0] << " [--frequency <val>] [--buffer <val>] [--nvoices <num>] [--control <0/1>] [--group <0/1>] [--virtual-midi <0/1>]\n";
+        cout << argv[0] << " [--sample-rate <val>] [--buffer <val>] [--nvoices <num>] [--control <0/1>] [--group <0/1>] [--virtual-midi <0/1>]\n";
         exit(1);
     }
 
-    long srate = (long)lopt(argv, "--frequency", 44100);
+    long srate = (long)lopt(argv, "--sample-rate", 44100);
     int fpb = lopt(argv, "--buffer", 128);
     bool is_virtual = lopt(argv, "--virtual-midi", false);
      
@@ -219,7 +220,9 @@ int main(int argc, char* argv[])
         cerr << "Unable to init audio" << endl;
         exit(1);
     }
+    
     finterface->recallState(rcfilename);
+    
     if (!audio.start()) {
         cerr << "Unable to start audio" << endl;
         exit(1);

@@ -121,11 +121,11 @@ int main(int argc, char* argv[])
     snprintf(rcfilename, 256, "%s/.%src", home, basename(argv[0]));
     
     if (isopt(argv, "-h")) {
-        std::cout << "prog [--frequency <val>] [--buffer <val>] [--poly] [--group <0/1>] [--virtual-midi <0/1>]\n";
+        std::cout << "prog [--sample-rate <val>] [--buffer <val>] [--poly] [--group <0/1>] [--virtual-midi <0/1>]\n";
         exit(1);
     }
     
-    long srate = (long)lopt(argv, "--frequency", 44100);
+    long srate = (long)lopt(argv, "--sample-rate", 44100);
     int fpb = lopt(argv, "--buffer", 512);
     bool is_virtual = lopt(argv, "--virtual-midi", false);
     
@@ -193,10 +193,6 @@ int main(int argc, char* argv[])
         std::cerr << "Unable to init audio" << std::endl;
         exit(1);
     }
-    if (!audio.start()) {
-        std::cerr << "Unable to start audio" << std::endl;
-        exit(1);
-    }
     
     std::cout << "ins " << audio.getNumInputs() << std::endl;
     std::cout << "outs " << audio.getNumOutputs() << std::endl;
@@ -219,6 +215,12 @@ int main(int argc, char* argv[])
     
     // After the allocation of controllers
     finterface.recallState(rcfilename);
+    
+    if (!audio.start()) {
+        std::cerr << "Unable to start audio" << std::endl;
+        exit(1);
+    }
+    
     interface.run();
     
     myApp.setStyleSheet(interface.styleSheet());

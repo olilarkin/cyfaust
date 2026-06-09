@@ -34,9 +34,15 @@
 #include <iostream>
 
 #include "faust/gui/PrintUI.h"
+#include "faust/gui/MapUI.h"
+#ifdef LAYOUT_UI
+#include "faust/gui/LayoutUI.h"
+#endif
 #include "faust/gui/meta.h"
 #include "faust/audio/dummy-audio.h"
-#include "faust/dsp/one-sample-dsp.h"
+#ifdef FIXED_POINT
+#include "faust/dsp/fixed-point.h"
+#endif
 
 // faust -a minimal.cpp noise.dsp -o noise.cpp && c++ -std=c++11 noise.cpp -o noise && ./noise
 
@@ -62,15 +68,66 @@
 
 using namespace std;
 
+#ifdef LAYOUT_UI
+void getMinimumSize(dsp* dsp, LayoutUI* ui, float& width, float& height)
+{
+    // Prepare layout
+    dsp->buildUserInterface(ui);
+    
+    cout << "==========================" << endl;
+    for (const auto& it : ui->fPathItemMap) {
+        cout << it.second << endl;
+    }
+    
+    cout << "Width " << ui->getWidth() << endl;
+    cout << "Height " << ui->getHeight() << endl;
+    
+    width = ui->getWidth();
+    height = ui->getHeight();
+}
+
+void setPosAndSize(LayoutUI* ui, float x_pos, float y_pos, float width, float height)
+{
+    ui->setSize(width, height);
+    ui->setPos(x_pos, y_pos);
+    
+    cout << "==========================" << endl;
+    for (const auto& it : ui->fPathItemMap) {
+        cout << it.second << endl;
+    }
+    
+    cout << "Width " << ui->getWidth() << endl;
+    cout << "Height " << ui->getHeight() << endl;
+}
+#endif
+
 int main(int argc, char* argv[])
 {
     mydsp DSP;
     cout << "DSP size: " << sizeof(DSP) << " bytes\n";
     
     // Activate the UI, here that only print the control paths
-    PrintUI ui;
-    DSP.buildUserInterface(&ui);
-
+    PrintUI print_ui;
+    DSP.buildUserInterface(&print_ui);
+    
+    /*
+    MapUI map_ui;
+    DSP.buildUserInterface(&map_ui);
+    for (int i = 0; i < map_ui.getParamsCount(); i++) {
+        cout << "getParamAddress " << map_ui.getParamAddress(i) << endl;
+        cout << "getParamShortname " << map_ui.getParamShortname(i) << endl;
+        cout << "getParamLabel " << map_ui.getParamLabel(i) << endl;
+    }
+    */
+    
+#ifdef LAYOUT_UI
+    LayoutUI layout_ui;
+    float width, height;
+    getMinimumSize(&DSP, &layout_ui, width, height);
+    cout << "minimal_width: " << width << "\n";
+    cout << "minimal_height: " << height << "\n";
+    setPosAndSize(&layout_ui, 0, 0, width*1.5, height*1.5);
+#else
     // Allocate the audio driver to render 5 buffers of 512 frames
     dummyaudio audio(5);
     audio.init("Test", static_cast<dsp*>(&DSP));
@@ -78,6 +135,7 @@ int main(int argc, char* argv[])
     // Render buffers...
     audio.start();
     audio.stop();
+#endif
 }
 
 /******************* END minimal.cpp ****************/
