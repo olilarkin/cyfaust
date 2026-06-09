@@ -849,12 +849,15 @@ class FaustBuilder(Builder):
         self.copy_sharedlib()
         if PLATFORM in ["Linux", "Darwin"]:
             self.copy_headers()
+            # refresh bundled resources so they track the built faust version.
+            # only on Unix, where `make install` populates `self.prefix`; the
+            # Windows build skips install (see build_faust), so it relies on the
+            # committed resources, exactly as it does for the committed headers.
+            self.copy_stdlib()
+            self.copy_examples()
+            self.copy_architecture()
         if PLATFORM == "Windows":
             patch_headers_for_msvc(self.project.include)
-        # refresh bundled resources so they track the built faust version
-        self.copy_stdlib()
-        self.copy_examples()
-        self.copy_architecture()
         self.log.info("faust build DONE")
 
 
