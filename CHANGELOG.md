@@ -15,6 +15,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 
 ## [Unreleased]
 
+## [0.1.4]
+
+### Fixed
+
+- Fixed Windows CI build failure introduced in 0.1.3: the bundled-resources refresh (`copy_stdlib()`, `copy_examples()`, `copy_architecture()`) was called unconditionally in `FaustBuilder.process()`, but it sources from the install prefix populated by `make install`, which the Windows build skips. The refresh is now gated to Linux/macOS; Windows consumes the committed `resources` as-is, mirroring how the committed headers are handled
+
 ## [0.1.3]
 
 ### Added
@@ -37,7 +43,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 
 ### Fixed
 
-- Fixed stale bundled `resources` on Faust version updates: `FaustBuilder.copy_stdlib()` and `copy_examples()` wrote to the gitignored, non-bundled `share/faust` directory and were disabled in `process()`. They now sync into the tracked-and-bundled `resources/libraries` (and `resources/libraries/examples`), and are re-enabled (along with the new `copy_architecture()`) on Linux/macOS so a Faust bump refreshes the bundled standard library, examples, and architecture files. The refresh is gated to Unix because it sources from the install prefix populated by `make install`, which the Windows build skips; Windows consumes the committed `resources` as-is, mirroring how the committed headers are handled
+- Fixed stale bundled `resources` on Faust version updates: `FaustBuilder.copy_stdlib()` and `copy_examples()` wrote to the gitignored, non-bundled `share/faust` directory and were disabled in `process()`. They now sync into the tracked-and-bundled `resources/libraries` (and `resources/libraries/examples`), and are re-enabled along with the new `copy_architecture()` so a Faust bump refreshes the bundled standard library, examples, and architecture files
 - Fixed remaining VLAs in `include/faust/dsp/sound-player.h` (3 locations) that caused MSVC C2131 errors on Windows CI
 
 ## [0.1.2]
